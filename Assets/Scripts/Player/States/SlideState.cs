@@ -45,10 +45,10 @@ namespace VertigoHound.Player.States
             ctx.Motor.SetFriction(0f);
 
             // 카메라 연출: FOV 팽창 + 높이 낮춤
-            ctx.Camera.ApplySlideFOV();
-            ctx.Camera.SetHeight(SlideCameraHeight);
+            ctx.Camera?.ApplySlideFOV();
+            ctx.Camera?.SetHeight(SlideCameraHeight);
 
-            ctx.Animation.PlaySlide();
+            ctx.Animation?.PlaySlide();
         }
 
         public void Tick(float deltaTime)
@@ -96,8 +96,8 @@ namespace VertigoHound.Player.States
             ctx.Motor.SetFriction(0.6f);
 
             // 카메라 복구
-            ctx.Camera.ResetFOV();
-            ctx.Camera.ResetHeight();
+            ctx.Camera?.ResetFOV();
+            ctx.Camera?.ResetHeight();
         }
     }
 }

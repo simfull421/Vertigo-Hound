@@ -1,7 +1,8 @@
 // ============================================================================
 // CharacterFacade.cs — Facade 패턴 (외부 API 단일 창구)
 // 외부 시스템(Map, UI, Tutorial)은 이 클래스를 통해서만 플레이어와 소통합니다.
-// 내부적으로 StateMachine, PhysicsMotor, CameraController, AnimationController에 위임합니다.
+// ★ State 클래스들은 입력 이벤트를 직접 듣지 않고, Facade를 통해 전달받은
+//   상태값(JumpTriggered, IsGrabbing 등)을 읽어서 동작합니다.
 // ============================================================================
 
 using System;
@@ -31,10 +32,10 @@ namespace VertigoHound.Player
         // ──────────────────────────────────────────────
 
         [Header("=== 하위 컴포넌트 참조 ===")]
-        [Tooltip("1인칭 카메라 컨트롤러")]
+        [Tooltip("CameraRoot에 붙은 CameraController")]
         [SerializeField] private CameraController cameraController;
 
-        [Tooltip("1인칭 애니메이션 컨트롤러")]
+        [Tooltip("1인칭 애니메이션 컨트롤러 (없으면 null 허용)")]
         [SerializeField] private AnimationController animationController;
 
         // ──────────────────────────────────────────────
@@ -52,20 +53,23 @@ namespace VertigoHound.Player
         /// <summary>현재 FSM 상태 ID</summary>
         public StateId CurrentStateId => stateMachine.CurrentStateId;
 
-        /// <summary>PhysicsMotor 직접 접근 (State 클래스 전용)</summary>
+        /// <summary>PhysicsMotor 접근 (State 클래스 전용)</summary>
         public PhysicsMotor Motor => motor;
 
-        /// <summary>CameraController 직접 접근 (State 클래스 전용)</summary>
+        /// <summary>CameraController 접근 (State 클래스 전용, null 가능)</summary>
         public CameraController Camera => cameraController;
 
-        /// <summary>AnimationController 직접 접근 (State 클래스 전용)</summary>
+        /// <summary>AnimationController 접근 (State 클래스 전용, null 가능)</summary>
         public AnimationController Animation => animationController;
 
-        /// <summary>PlayerController 직접 접근 (State 클래스에서 입력 읽기용)</summary>
+        /// <summary>PlayerController 접근 (State 클래스에서 입력 상태 읽기용)</summary>
         public PlayerController Input => playerInput;
 
         /// <summary>FSM에 상태 전환 요청 (State 클래스 전용)</summary>
         public CharacterStateMachine StateMachine => stateMachine;
+
+        /// <summary>현재 이동 방향 벡터 (PlayerController가 매 프레임 갱신)</summary>
+        public Vector3 CurrentMoveDirection { get; private set; }
 
         // ──────────────────────────────────────────────
         // Unity 생명주기
@@ -91,12 +95,19 @@ namespace VertigoHound.Player
 
         private void Update()
         {
-            // 매 프레임 현재 상태의 Tick 호출
+            // 1) 시선 처리 (CameraRoot 회전)
+            if (cameraController != null)
+            {
+                Vector2 look = playerInput.LookInput;
+                cameraController.Look(look.x, look.y, transform);
+            }
+
+            // 2) 매 프레임 현재 상태의 Tick 호출
             stateMachine.Tick(Time.deltaTime);
         }
 
         // ──────────────────────────────────────────────
-        // 상태 등록 (모든 State를 FSM에 등록)
+        // 상태 등록
         // ──────────────────────────────────────────────
 
         private void RegisterStates()
@@ -114,45 +125,35 @@ namespace VertigoHound.Player
         // 외부 API (PlayerController → Facade)
         // ──────────────────────────────────────────────
 
-        /// <summary>이동 요청. 현재 상태에 따라 처리 방식이 달라집니다.</summary>
+        /// <summary>이동 방향 갱신. PlayerController의 Update에서 매 프레임 호출됩니다.</summary>
         public void RequestMove(Vector3 direction)
         {
-            // 이동은 각 State의 Tick에서 Motor를 통해 처리하므로
-            // 여기서는 방향 벡터를 저장만 합니다.
             CurrentMoveDirection = direction;
         }
 
-        /// <summary>점프 요청</summary>
+        /// <summary>
+        /// 점프 명령. PlayerController의 OnJump 콜백에서 즉시 호출됩니다.
+        /// ★ 파이프라인: OnJump 콜백 → Facade.RequestJump() → StateMachine.HandleJump() → State.HandleJump()
+        /// </summary>
         public void RequestJump()
         {
-            // 현재 상태에 따라 FSM이 알아서 처리
-            // RunState: 바닥 점프 → AirborneState
-            // WallRunState: 벽 차기 → AirborneState
-            // CeilingState: 중력 복구 → AirborneState(또는 RunState)
-            // 그 외 상태에서는 무시
+            Debug.Log("[CharacterFacade] RequestJump() → StateMachine.HandleJump()");
+            stateMachine.HandleJump();
         }
 
-        /// <summary>슬라이드 요청</summary>
+        /// <summary>
+        /// 슬라이드 명령. PlayerController의 OnSlide 콜백에서 즉시 호출됩니다.
+        /// </summary>
         public void RequestSlide()
         {
-            // RunState에서만 유효
+            stateMachine.HandleSlide();
         }
-
-        // ──────────────────────────────────────────────
-        // 공유 데이터 (State 클래스들이 접근)
-        // ──────────────────────────────────────────────
-
-        /// <summary>현재 이동 방향 벡터 (PlayerController가 매 프레임 갱신)</summary>
-        public Vector3 CurrentMoveDirection { get; private set; }
 
         // ──────────────────────────────────────────────
         // 외부 API (Map System → Facade)
         // ──────────────────────────────────────────────
 
-        /// <summary>
-        /// 트리거 충돌을 처리합니다. EventTriggers가 호출합니다.
-        /// </summary>
-        /// <param name="triggerType">충돌한 트리거의 종류</param>
+        /// <summary>트리거 충돌 처리. EventTriggers가 호출합니다.</summary>
         public void HandleTrigger(string triggerType)
         {
             switch (triggerType)
@@ -161,12 +162,11 @@ namespace VertigoHound.Player
                     stateMachine.ChangeState(StateId.FreeFall);
                     OnActionPerformed?.Invoke("FreeFallEnter");
                     break;
-                // 추가 트리거 타입은 여기에 확장
             }
         }
 
         // ──────────────────────────────────────────────
-        // 콤보 배수 방송 (ScoreManager 연동)
+        // 이벤트 방송 (State → 외부)
         // ──────────────────────────────────────────────
 
         /// <summary>콤보 배수를 외부에 방송합니다</summary>

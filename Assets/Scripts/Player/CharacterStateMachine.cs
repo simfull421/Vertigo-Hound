@@ -98,6 +98,23 @@ namespace VertigoHound.Player
         }
 
         // ──────────────────────────────────────────────
+        // 즉시 명령 라우터 (Push-based)
+        // 콜백 → Facade → 여기 → 현재 State로 전달
+        // ──────────────────────────────────────────────
+
+        /// <summary>점프 명령을 현재 활성 상태에 즉시 전달합니다.</summary>
+        public void HandleJump()
+        {
+            currentState?.HandleJump();
+        }
+
+        /// <summary>슬라이드 명령을 현재 활성 상태에 즉시 전달합니다.</summary>
+        public void HandleSlide()
+        {
+            currentState?.HandleSlide();
+        }
+
+        // ──────────────────────────────────────────────
         // 초기 상태 설정
         // ──────────────────────────────────────────────
 

@@ -21,9 +21,6 @@ namespace VertigoHound.Map
         [Tooltip("청크 간 간격 (Z축 거리)")]
         [SerializeField] private float chunkSpacing = 50f;
 
-        [Tooltip("플레이어 전방에 미리 생성할 청크 수")]
-        [SerializeField] private int lookaheadCount = 3;
-
         [Header("=== 난이도 곡선 ===")]
         [Tooltip("난이도 증가 커브 (X: 경과 시간 비율, Y: 난이도 0~1)")]
         [SerializeField] private AnimationCurve difficultyCurve = AnimationCurve.Linear(0f, 0f, 1f, 1f);

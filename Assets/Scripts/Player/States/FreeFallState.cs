@@ -36,12 +36,12 @@ namespace VertigoHound.Player.States
             elapsedTime = 0f;
 
             // 카메라 연출: 180도 백덤블링
-            ctx.Camera.PlayBackflipSequence();
+            ctx.Camera?.PlayBackflipSequence();
 
             // Y축 속도 리셋 후 중력으로 가속 (자연스러운 낙하 시작)
             ctx.Motor.ResetVerticalVelocity();
 
-            ctx.Animation.PlayAirborne();
+            ctx.Animation?.PlayAirborne();
             ctx.BroadcastAction("FreeFallEnter");
         }
 

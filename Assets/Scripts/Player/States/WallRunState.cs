@@ -1,10 +1,9 @@
 // ============================================================================
 // WallRunState.cs — 나선형 벽 타기 상태
-// 벽에 달라붙어 약한 Downforce를 받으며 나선형으로 하강합니다.
-// ★ 방식 B: Grab 버튼(우클릭/Shift)을 유지해야 벽에 붙어있음.
-//   Grab을 놓으면 즉시 떨어짐.
-// 전이: → AirborneState(벽 차기/Grab 해제),
-//       → CeilingState(벽 차기로 천장 도달 + Grab)
+// ★ Enter에서 Motor.EnableCustomGravity = false → 기본 중력(25f) 차단
+//   → wallRunDownforce(3f)만으로 부드러운 나선형 하강
+// ★ Exit에서 Motor.EnableCustomGravity = true → 기본 중력 복구
+// ★ 틸트: 왼쪽 벽 = Z축 음수(시계=오른쪽), 오른쪽 벽 = Z축 양수(반시계=왼쪽)
 // ============================================================================
 
 using UnityEngine;
@@ -15,8 +14,12 @@ namespace VertigoHound.Player.States
     {
         private readonly CharacterFacade ctx;
 
-        /// <summary>벽에 부착된 방향. 1 = 우측 벽, -1 = 좌측 벽</summary>
-        private int wallDirection;
+        /// <summary>
+        /// 틸트 방향.
+        /// -1 = 왼쪽 벽 → Z축 음수 (오른쪽 기울임)
+        /// +1 = 오른쪽 벽 → Z축 양수 (왼쪽 기울임)
+        /// </summary>
+        private int tiltDirection;
 
         public WallRunState(CharacterFacade context)
         {
@@ -25,56 +28,83 @@ namespace VertigoHound.Player.States
 
         public void Enter()
         {
-            // 벽 법선으로 방향 판별 (법선이 왼쪽을 가리키면 우측 벽에 붙어있음)
+            // ── 벽 법선으로 틸트 방향 계산 ──
             Vector3 wallNormal = ctx.Motor.LastWallNormal;
             float dot = Vector3.Dot(ctx.Motor.transform.right, wallNormal);
-            wallDirection = dot < 0 ? 1 : -1;
 
-            // Y축 속도 제거 (벽에 부착)
+            // dot > 0 → 법선이 오른쪽 → 왼쪽 벽 → Z- (오른쪽 기울임) → direction=-1
+            // dot < 0 → 법선이 왼쪽  → 오른쪽 벽 → Z+ (왼쪽 기울임) → direction=+1
+            tiltDirection = dot > 0 ? -1 : 1;
+
+            Debug.Log($"[WallRunState] Enter — wallNormal={wallNormal}, " +
+                      $"dot={dot:F2}, tiltDirection={tiltDirection} " +
+                      $"({(tiltDirection < 0 ? "오른쪽 기울임 (왼쪽 벽)" : "왼쪽 기울임 (오른쪽 벽)")})");
+
+            // ★ 기본 중력 차단 — wallRunDownforce만 적용되도록
+            ctx.Motor.EnableCustomGravity = false;
+
+            // Y축 속도 제거 (벽에 부착 — 수평 Momentum만 보존)
             ctx.Motor.ResetVerticalVelocity();
 
-            // 카메라 연출: 벽 방향으로 Tilt
-            ctx.Camera.ApplyWallRunTilt(wallDirection);
+            // 카메라 틸트
+            ctx.Camera?.ApplyWallRunTilt(tiltDirection);
 
-            ctx.Animation.PlayWallRun();
+            ctx.Animation?.PlayWallRun();
             ctx.BroadcastAction("WallRunStart");
+        }
+
+        // ══════════════════════════════════════════
+        // ★ 푸시 방식 점프 — 콜백에서 즉시 호출됨
+        //   벽 차기(Wall Jump): 스페이스바
+        // ══════════════════════════════════════════
+
+        public void HandleJump()
+        {
+            Debug.Log("[WallRunState] HandleJump — Wall Jump 실행!");
+            ctx.Motor.WallJump();
+            ctx.BroadcastAction("WallJump");
+            ctx.StateMachine.ChangeState(StateId.Airborne);
         }
 
         public void Tick(float deltaTime)
         {
-            // ── Grab 해제 → 즉시 떨어짐 (방식 B) ──
+            // ══════════════════════════════════════════
+            // 1. Grab 해제 → 즉시 떨어짐 (방식 B)
+            // ══════════════════════════════════════════
             if (!ctx.Input.IsGrabbing)
             {
+                Debug.Log("[WallRunState] Grab 해제 → AirborneState");
                 ctx.StateMachine.ChangeState(StateId.Airborne);
                 return;
             }
 
-            // ── 벽에서 벗어남 → 떨어짐 ──
+            // ══════════════════════════════════════════
+            // 2. 벽에서 벗어남 → 떨어짐
+            // ══════════════════════════════════════════
             if (!ctx.Motor.IsTouchingWall)
             {
+                Debug.Log("[WallRunState] 벽 이탈 → AirborneState");
                 ctx.StateMachine.ChangeState(StateId.Airborne);
                 return;
             }
 
-            // ── 나선형 하강: 약한 Downforce 적용 ──
+            // ══════════════════════════════════════════
+            // 3. 나선형 하강(Spiral Descent) 물리
+            //    ★ 기본 중력(25f)은 꺼져 있으므로, wallRunDownforce(3f)만 작용
+            //    → 부드러운 나선형 미끄러짐
+            // ══════════════════════════════════════════
             ctx.Motor.ApplyWallRunDownforce();
 
-            // 전진 속도 유지 (Momentum 보존)
-            ctx.Motor.Move(ctx.Motor.transform.forward * ctx.Motor.CurrentSpeed);
+            // 전진 방향으로 이동 유지 (벽 면을 따라)
+            Vector3 wallForward = ctx.Motor.transform.forward;
+            ctx.Motor.Move(wallForward);
 
-            // ── 벽 차기(Wall Jump): 스페이스바 ──
-            if (ctx.Input.JumpPressed)
-            {
-                // ★ 핵심: 법선 벡터 기반 대각선 Impulse + Momentum 100% 보존
-                ctx.Motor.WallJump();
-                ctx.BroadcastAction("WallJump");
-                ctx.StateMachine.ChangeState(StateId.Airborne);
-                return;
-            }
-
-            // ── 착지 → RunState ──
+            // ══════════════════════════════════════════
+            // 4. 착지 → RunState
+            // ══════════════════════════════════════════
             if (ctx.Motor.IsGrounded)
             {
+                Debug.Log("[WallRunState] 착지 → RunState");
                 ctx.StateMachine.ChangeState(StateId.Run);
                 return;
             }
@@ -82,8 +112,12 @@ namespace VertigoHound.Player.States
 
         public void Exit()
         {
-            // 카메라 Tilt 복구
-            ctx.Camera.ResetTilt();
+            // ★ 기본 중력 복구 — 벽에서 나가면 다시 정상 중력 적용
+            ctx.Motor.EnableCustomGravity = true;
+
+            ctx.Camera?.ResetTilt();
+
+            Debug.Log("[WallRunState] Exit — EnableCustomGravity=true 복구");
         }
     }
 }

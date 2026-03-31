@@ -30,10 +30,10 @@ namespace VertigoHound.Player.States
             ctx.Motor.ConvertVerticalToForward();
 
             // 카메라 높이를 사족보행 높이로 낮춤 (0.8~1m)
-            ctx.Camera.SetQuadHeight();
+            ctx.Camera?.SetQuadHeight();
 
             // 사족보행 애니메이션 재생
-            ctx.Animation.PlayQuadRun();
+            ctx.Animation?.PlayQuadRun();
 
             ctx.BroadcastAction("FreeFallLanded");
         }
@@ -44,7 +44,7 @@ namespace VertigoHound.Player.States
 
             // 사족보행 중에도 이동 유지 (Momentum 유지)
             ctx.Motor.Move(ctx.CurrentMoveDirection);
-            ctx.Animation.SetSpeed(ctx.Motor.CurrentSpeed);
+            ctx.Animation?.SetSpeed(ctx.Motor.CurrentSpeed);
 
             // ── 1.5초 경과 → RunState 복귀 ──
             if (elapsedTime >= RecoveryDuration)
@@ -56,7 +56,7 @@ namespace VertigoHound.Player.States
         public void Exit()
         {
             // 카메라 높이를 기본(1.7m)으로 부드럽게 복구
-            ctx.Camera.ResetHeight();
+            ctx.Camera?.ResetHeight();
         }
     }
 }

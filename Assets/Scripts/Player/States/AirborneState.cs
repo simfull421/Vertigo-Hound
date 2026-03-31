@@ -24,7 +24,7 @@ namespace VertigoHound.Player.States
 
         public void Enter()
         {
-            ctx.Animation.PlayAirborne();
+            ctx.Animation?.PlayAirborne();
         }
 
         public void Tick(float deltaTime)

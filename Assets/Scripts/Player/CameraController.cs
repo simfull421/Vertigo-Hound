@@ -1,16 +1,24 @@
 // ============================================================================
 // CameraController.cs — 1인칭 카메라 연출 전담 컴포넌트
-// FOV 변경, Z축 Tilt, 백덤블링, 180도 스냅턴, 셰이크, 높이 변경 등
-// 모든 시각 연출을 중앙에서 관리합니다.
+// ★ 하이어라키: Player → CameraRoot(이 스크립트) → MainCamera
+// CameraRoot의 회전(시선)과 위치(높이)를 SmoothDamp로 부드럽게 보간합니다.
+// MainCamera(자식)에서 FOV, 셰이크 오프셋을 적용합니다.
 // ============================================================================
 
 using UnityEngine;
 
 namespace VertigoHound.Player
 {
-    [RequireComponent(typeof(Camera))]
     public class CameraController : MonoBehaviour
     {
+        // ──────────────────────────────────────────────
+        // 인스펙터 참조
+        // ──────────────────────────────────────────────
+
+        [Header("=== 카메라 참조 ===")]
+        [Tooltip("CameraRoot의 자식인 MainCamera (Camera 컴포넌트가 붙은 객체)")]
+        [SerializeField] private Camera mainCamera;
+
         // ──────────────────────────────────────────────
         // 인스펙터 조절 변수
         // ──────────────────────────────────────────────
@@ -57,21 +65,27 @@ namespace VertigoHound.Player
         [Tooltip("180도 스냅턴에 걸리는 시간 (초)")]
         [SerializeField] private float snapTurnDuration = 0.08f;
 
-        [Header("=== 높이 전환 ===")]
-        [Tooltip("카메라 높이 전환 속도")]
-        [SerializeField] private float heightLerpSpeed = 5f;
+        [Header("=== SmoothDamp 보간 ===")]
+        [Tooltip("높이 전환 SmoothDamp 시간 (초). 낮을수록 빠름")]
+        [SerializeField] private float heightSmoothTime = 0.15f;
+
+        [Tooltip("회전 전환 SmoothDamp 시간 (초)")]
+        [SerializeField] private float rotationSmoothTime = 0.02f;
 
         // ──────────────────────────────────────────────
         // 내부 상태
         // ──────────────────────────────────────────────
 
-        private Camera cam;
         private float targetFOV;
         private float targetTiltZ;
         private float targetHeight;
         private float currentTiltZ;
         private float currentHeight;
         private float xRotation; // 상하 시선 각도
+
+        // SmoothDamp 속도 변수 (ref로 전달)
+        private float heightVelocity;
+        private float tiltVelocity;
 
         // 백덤블링 / 스냅턴 코루틴 제어
         private Coroutine activeRotationRoutine;
@@ -82,7 +96,10 @@ namespace VertigoHound.Player
 
         private void Awake()
         {
-            cam = GetComponent<Camera>();
+            // MainCamera가 인스펙터에서 할당되지 않으면 자식에서 찾기
+            if (mainCamera == null)
+                mainCamera = GetComponentInChildren<Camera>();
+
             targetFOV = defaultFOV;
             targetHeight = defaultEyeHeight;
             currentHeight = defaultEyeHeight;
@@ -91,17 +108,21 @@ namespace VertigoHound.Player
 
         private void LateUpdate()
         {
-            // FOV 부드러운 전환
-            cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, targetFOV, fovLerpSpeed * Time.deltaTime);
+            // ── FOV 부드러운 전환 ──
+            if (mainCamera != null)
+                mainCamera.fieldOfView = Mathf.Lerp(mainCamera.fieldOfView, targetFOV, fovLerpSpeed * Time.deltaTime);
 
-            // Tilt 부드러운 전환
-            currentTiltZ = Mathf.Lerp(currentTiltZ, targetTiltZ, tiltLerpSpeed * Time.deltaTime);
+            // ── Tilt SmoothDamp ──
+            currentTiltZ = Mathf.SmoothDamp(currentTiltZ, targetTiltZ, ref tiltVelocity, rotationSmoothTime);
 
-            // 높이 부드러운 전환
-            currentHeight = Mathf.Lerp(currentHeight, targetHeight, heightLerpSpeed * Time.deltaTime);
+            // ── 높이 SmoothDamp (떨림 방지) ──
+            currentHeight = Mathf.SmoothDamp(currentHeight, targetHeight, ref heightVelocity, heightSmoothTime);
 
-            // 로컬 포지션 Y에 높이 적용
+            // ── CameraRoot 로컬 포지션에 높이 적용 ──
             transform.localPosition = new Vector3(0f, currentHeight, 0f);
+
+            // ── CameraRoot 로컬 회전 적용 (Pitch + Tilt) ──
+            transform.localRotation = Quaternion.Euler(xRotation, 0f, currentTiltZ);
         }
 
         // ──────────────────────────────────────────────
@@ -109,41 +130,34 @@ namespace VertigoHound.Player
         // ──────────────────────────────────────────────
 
         /// <summary>
-        /// 마우스 입력을 받아 카메라 좌우/상하 시선을 제어합니다.
+        /// 마우스/스틱 입력을 받아 시선을 제어합니다.
+        /// CameraRoot의 X축(Pitch)을 회전하고, 플레이어 본체의 Y축(Yaw)을 회전합니다.
         /// </summary>
-        /// <param name="mouseX">마우스 좌우 이동량</param>
-        /// <param name="mouseY">마우스 상하 이동량</param>
+        /// <param name="mouseX">수평 이동량</param>
+        /// <param name="mouseY">수직 이동량</param>
         /// <param name="playerTransform">플레이어 본체 Transform (좌우 회전용)</param>
         public void Look(float mouseX, float mouseY, Transform playerTransform)
         {
-            // 상하 시선 (카메라 자체 X축 회전)
+            // 상하 시선 (CameraRoot X축 회전)
             xRotation -= mouseY * mouseSensitivity;
             xRotation = Mathf.Clamp(xRotation, -89f, 89f);
 
             // 좌우 시선 (플레이어 본체 Y축 회전)
             playerTransform.Rotate(Vector3.up, mouseX * mouseSensitivity);
-
-            // 카메라 최종 로컬 회전 적용 (Tilt 포함)
-            transform.localRotation = Quaternion.Euler(xRotation, 0f, currentTiltZ);
         }
 
         // ──────────────────────────────────────────────
         // FOV 제어
         // ──────────────────────────────────────────────
 
-        /// <summary>목표 FOV를 설정합니다 (부드럽게 전환)</summary>
         public void SetFOV(float fov) => targetFOV = fov;
-
-        /// <summary>기본 FOV로 복구합니다</summary>
         public void ResetFOV() => targetFOV = defaultFOV;
 
-        /// <summary>속도에 비례한 FOV를 적용합니다 (질주 중)</summary>
         public void ApplySpeedFOV(float speedRatio)
         {
             targetFOV = Mathf.Lerp(defaultFOV, sprintFOV, speedRatio);
         }
 
-        /// <summary>슬라이딩 FOV 팽창</summary>
         public void ApplySlideFOV() => targetFOV = slideFOV;
 
         // ──────────────────────────────────────────────
@@ -151,78 +165,72 @@ namespace VertigoHound.Player
         // ──────────────────────────────────────────────
 
         /// <summary>
-        /// 벽 타기 방향에 따라 카메라를 기울입니다.
+        /// 벽 타기 틸트. Unity Z축: +(양수)=반시계=왼쪽기울임, -(음수)=시계=오른쪽기울임.
+        /// 왼쪽 벽(direction=-1) → 오른쪽으로 기울임(Z-) = direction * angle = -angle ✓
+        /// 오른쪽 벽(direction=+1) → 왼쪽으로 기울임(Z+) = direction * angle = +angle ✓
         /// </summary>
-        /// <param name="direction">1 = 우측 벽, -1 = 좌측 벽</param>
         public void ApplyWallRunTilt(int direction)
         {
-            targetTiltZ = -direction * wallRunTiltAngle;
+            // direction: +1 = 오른쪽 벽 → Z+ (왼쪽 기울임)
+            //            -1 = 왼쪽 벽  → Z- (오른쪽 기울임)
+            targetTiltZ = direction * wallRunTiltAngle;
+            Debug.Log($"[CameraController] Tilt — direction={direction}, " +
+                      $"targetZ={targetTiltZ:F1}° ({(direction > 0 ? "왼쪽 기울임(오른쪽벽)" : "오른쪽 기울임(왼쪽벽)")})");
         }
 
-        /// <summary>Tilt를 0도로 복구합니다</summary>
         public void ResetTilt() => targetTiltZ = 0f;
 
         // ──────────────────────────────────────────────
         // 카메라 높이 제어
         // ──────────────────────────────────────────────
 
-        /// <summary>카메라 높이를 사족보행 높이로 낮춥니다</summary>
         public void SetQuadHeight() => targetHeight = quadEyeHeight;
-
-        /// <summary>카메라 높이를 기본 이족보행으로 복구합니다</summary>
         public void ResetHeight() => targetHeight = defaultEyeHeight;
-
-        /// <summary>카메라 높이를 직접 설정합니다</summary>
         public void SetHeight(float height) => targetHeight = height;
 
         // ──────────────────────────────────────────────
-        // 셰이크 (화면 흔들림)
+        // 셰이크 (화면 흔들림) — MainCamera 로컬 오프셋
         // ──────────────────────────────────────────────
 
         /// <summary>
-        /// 속도에 비례한 화면 셰이크를 적용합니다.
-        /// RunState의 Tick에서 매 프레임 호출합니다.
+        /// 속도에 비례한 화면 셰이크. MainCamera의 로컬 위치를 오프셋합니다.
+        /// CameraRoot 자체는 흔들지 않으므로 SmoothDamp와 충돌하지 않습니다.
         /// </summary>
-        /// <param name="intensity">0~1 사이의 강도 비율</param>
         public void ApplyShake(float intensity)
         {
+            if (mainCamera == null) return;
             float shake = intensity * maxShakeIntensity;
             Vector3 offset = new Vector3(
                 Random.Range(-shake, shake),
                 Random.Range(-shake, shake),
                 0f
             );
-            // 기존 로컬 포지션에 셰이크 오프셋만 더함
-            transform.localPosition = new Vector3(offset.x, currentHeight + offset.y, 0f);
+            mainCamera.transform.localPosition = offset;
+        }
+
+        /// <summary>셰이크 오프셋을 리셋합니다.</summary>
+        public void ResetShake()
+        {
+            if (mainCamera != null)
+                mainCamera.transform.localPosition = Vector3.zero;
         }
 
         // ──────────────────────────────────────────────
         // 특수 연출 (코루틴 기반)
         // ──────────────────────────────────────────────
 
-        /// <summary>
-        /// 백덤블링 연출: 카메라 X축을 180도 회전시킵니다.
-        /// FreeFallState 진입 시 호출합니다.
-        /// </summary>
         public void PlayBackflipSequence()
         {
             if (activeRotationRoutine != null) StopCoroutine(activeRotationRoutine);
             activeRotationRoutine = StartCoroutine(RotateXOverTime(180f, backflipDuration));
         }
 
-        /// <summary>
-        /// 스냅턴 연출: 카메라 Z축을 180도 회전시킵니다.
-        /// CeilingState 진입 시 중력 반전과 함께 호출합니다.
-        /// </summary>
         public void PlaySnapInvert()
         {
             if (activeRotationRoutine != null) StopCoroutine(activeRotationRoutine);
             activeRotationRoutine = StartCoroutine(RotateZOverTime(180f, snapTurnDuration));
         }
 
-        /// <summary>
-        /// 스냅턴 복귀: 천장에서 나올 때 카메라를 원래대로 되돌립니다.
-        /// </summary>
         public void PlaySnapRestore()
         {
             if (activeRotationRoutine != null) StopCoroutine(activeRotationRoutine);

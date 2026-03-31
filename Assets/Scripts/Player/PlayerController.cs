@@ -1,8 +1,9 @@
 // ============================================================================
-// PlayerController.cs — New Input System 입력 처리 전담
-// 키보드/마우스 입력을 읽어 CharacterFacade에 전달합니다.
-// ★ 직접 물리를 건드리지 않고, Facade의 공개 메서드만 호출합니다.
-// ★ Grab 버튼(우클릭/Shift): IsTouchingWall/Ceiling + Grab 유지 → 벽/천장 전환
+// PlayerController.cs — Input Action Asset 기반 Event-driven 입력 처리
+// ★ Keyboard.current 직접 폴링 폐지 → InputActionAsset 콜백 방식 전면 전환
+// ★ Grab 버튼: Sprint 액션(Shift) + 우클릭(Attack 대체 또는 별도 바인딩)
+// ★ 입력 이벤트를 직접 물리에 적용하지 않고, 상태값만 갱신하여
+//   CharacterFacade가 State에 전달합니다.
 // ============================================================================
 
 using UnityEngine;
@@ -17,9 +18,9 @@ namespace VertigoHound.Player
         // 인스펙터 참조
         // ──────────────────────────────────────────────
 
-        [Header("=== 카메라 참조 ===")]
-        [Tooltip("1인칭 카메라 (CameraController가 붙은 객체)")]
-        [SerializeField] private CameraController cameraController;
+        [Header("=== Input Action Asset ===")]
+        [Tooltip("InputSystem_Actions 에셋을 여기에 드래그하세요")]
+        [SerializeField] private InputActionAsset inputActions;
 
         // ──────────────────────────────────────────────
         // 내부 참조
@@ -27,27 +28,35 @@ namespace VertigoHound.Player
 
         private CharacterFacade facade;
 
+        // Input Actions (Player 맵에서 가져옴)
+        private InputAction moveAction;
+        private InputAction lookAction;
+        private InputAction jumpAction;
+        private InputAction slideAction;   // "Crouch" 액션을 슬라이드로 사용
+        private InputAction grabAction;    // "Sprint" 액션(Shift)을 Grab으로 사용
+
         // ──────────────────────────────────────────────
         // 입력 상태 (외부에서 읽기 전용)
+        // CharacterFacade → State 클래스들이 이 값을 읽습니다.
         // ──────────────────────────────────────────────
 
-        /// <summary>이동 입력 벡터 (WASD)</summary>
+        /// <summary>이동 입력 벡터 (WASD / 스틱)</summary>
         public Vector2 MoveInput { get; private set; }
 
-        /// <summary>Grab 버튼이 눌려 있는가? (우클릭 또는 Shift)</summary>
+        /// <summary>마우스 / 스틱 시선 이동량</summary>
+        public Vector2 LookInput { get; private set; }
+
+        /// <summary>Grab 버튼이 눌려 있는가? (Shift 또는 우클릭)</summary>
         public bool IsGrabbing { get; private set; }
 
-        /// <summary>이번 프레임에 점프 키를 눌렀는가?</summary>
-        public bool JumpPressed { get; private set; }
+        /// <summary>이번 프레임에 점프가 트리거되었는가?</summary>
+        public bool JumpTriggered { get; private set; }
 
-        /// <summary>이번 프레임에 슬라이드 키를 눌렀는가?</summary>
-        public bool SlidePressed { get; private set; }
+        /// <summary>이번 프레임에 슬라이드가 트리거되었는가?</summary>
+        public bool SlideTriggered { get; private set; }
 
         /// <summary>슬라이드 키를 유지하고 있는가?</summary>
         public bool SlideHeld { get; private set; }
-
-        /// <summary>마우스 시선 이동량</summary>
-        public Vector2 LookInput { get; private set; }
 
         // ──────────────────────────────────────────────
         // Unity 생명주기
@@ -56,89 +65,144 @@ namespace VertigoHound.Player
         private void Awake()
         {
             facade = GetComponent<CharacterFacade>();
+            SetupActions();
+        }
+
+        private void OnEnable()
+        {
+            EnableActions();
+            SubscribeCallbacks();
+        }
+
+        private void OnDisable()
+        {
+            UnsubscribeCallbacks();
+            DisableActions();
         }
 
         private void Update()
         {
-            ReadInputs();
-            HandleLook();
-            HandleMovement();
-            HandleActions();
-        }
+            // 연속 입력(Value 타입)은 매 프레임 읽기
+            MoveInput = moveAction.ReadValue<Vector2>();
+            LookInput = lookAction.ReadValue<Vector2>();
+            SlideHeld = slideAction.IsPressed();
 
-        // ──────────────────────────────────────────────
-        // 입력 읽기 (New Input System — Polling 방식)
-        // ──────────────────────────────────────────────
+            // ★ 유지(Hold) 판정인 Grab은 콜백 대신 매 프레임 눌림 여부를 확실하게 판별
+            IsGrabbing = grabAction.IsPressed();
 
-        private void ReadInputs()
-        {
-            Keyboard kb = Keyboard.current;
-            Mouse mouse = Mouse.current;
-            if (kb == null || mouse == null) return;
-
-            // WASD 이동
-            Vector2 rawMove = Vector2.zero;
-            if (kb.wKey.isPressed) rawMove.y += 1f;
-            if (kb.sKey.isPressed) rawMove.y -= 1f;
-            if (kb.aKey.isPressed) rawMove.x -= 1f;
-            if (kb.dKey.isPressed) rawMove.x += 1f;
-            MoveInput = rawMove.normalized;
-
-            // 마우스 시선
-            LookInput = mouse.delta.ReadValue();
-
-            // 점프 (이번 프레임에 눌렸는가?)
-            JumpPressed = kb.spaceKey.wasPressedThisFrame;
-
-            // 슬라이드 (C 또는 Ctrl)
-            SlidePressed = kb.cKey.wasPressedThisFrame || kb.leftCtrlKey.wasPressedThisFrame;
-            SlideHeld = kb.cKey.isPressed || kb.leftCtrlKey.isPressed;
-
-            // Grab 버튼 (우클릭 또는 Shift 유지)
-            IsGrabbing = mouse.rightButton.isPressed || kb.leftShiftKey.isPressed;
-        }
-
-        // ──────────────────────────────────────────────
-        // 시선 처리
-        // ──────────────────────────────────────────────
-
-        private void HandleLook()
-        {
-            if (cameraController == null) return;
-            cameraController.Look(LookInput.x, LookInput.y, transform);
-        }
-
-        // ──────────────────────────────────────────────
-        // 이동 처리 → Facade에 위임
-        // ──────────────────────────────────────────────
-
-        private void HandleMovement()
-        {
-            // 카메라 기준 이동 방향 계산
+            // 이동 방향을 Facade에 전달
             Vector3 forward = transform.forward;
             Vector3 right = transform.right;
-            Vector3 moveDirection = (forward * MoveInput.y + right * MoveInput.x).normalized;
+            Vector3 moveDir = (forward * MoveInput.y + right * MoveInput.x).normalized;
+            facade.RequestMove(moveDir);
+        }
 
-            facade.RequestMove(moveDirection);
+        private void LateUpdate()
+        {
+            // 원샷 플래그는 프레임 끝에서 리셋
+            // (State의 Tick이 Update에서 실행되므로 LateUpdate에서 리셋)
+            JumpTriggered = false;
+            SlideTriggered = false;
         }
 
         // ──────────────────────────────────────────────
-        // 액션 처리 → Facade에 위임
+        // Input Action 설정
         // ──────────────────────────────────────────────
 
-        private void HandleActions()
+        private void SetupActions()
         {
-            if (JumpPressed)
+            if (inputActions == null)
             {
-                facade.RequestJump();
+                Debug.LogError("[PlayerController] InputActionAsset이 할당되지 않았습니다!");
+                return;
             }
 
-            if (SlidePressed)
+            var playerMap = inputActions.FindActionMap("Player", throwIfNotFound: true);
+
+            moveAction  = playerMap.FindAction("Move",   throwIfNotFound: true);
+            lookAction  = playerMap.FindAction("Look",   throwIfNotFound: true);
+            jumpAction  = playerMap.FindAction("Jump",   throwIfNotFound: true);
+            slideAction = playerMap.FindAction("Crouch", throwIfNotFound: true);
+            grabAction  = playerMap.FindAction("Sprint", throwIfNotFound: true);
+
+            Debug.Log($"[PlayerController] Input Actions 매핑 완료 — " +
+                      $"Jump={jumpAction?.name}, Slide={slideAction?.name}(Crouch), " +
+                      $"Grab={grabAction?.name}(Sprint=LeftShift)");
+        }
+
+        private void EnableActions()
+        {
+            moveAction?.Enable();
+            lookAction?.Enable();
+            jumpAction?.Enable();
+            slideAction?.Enable();
+            grabAction?.Enable();
+        }
+
+        private void DisableActions()
+        {
+            moveAction?.Disable();
+            lookAction?.Disable();
+            jumpAction?.Disable();
+            slideAction?.Disable();
+            grabAction?.Disable();
+        }
+
+        // ──────────────────────────────────────────────
+        // 콜백 구독 / 해제
+        // ──────────────────────────────────────────────
+
+        private void SubscribeCallbacks()
+        {
+            if (jumpAction != null)
             {
-                facade.RequestSlide();
+                jumpAction.performed += OnJump;
             }
 
-            // Grab 상태는 Facade가 매 프레임 읽어감 (프로퍼티 노출)
+            if (slideAction != null)
+            {
+                slideAction.performed += OnSlide;
+            }
+        }
+
+        private void UnsubscribeCallbacks()
+        {
+            if (jumpAction != null)
+            {
+                jumpAction.performed -= OnJump;
+            }
+
+            if (slideAction != null)
+            {
+                slideAction.performed -= OnSlide;
+            }
+        }
+
+        // ──────────────────────────────────────────────
+        // Input Action 콜백 핸들러
+        // ──────────────────────────────────────────────
+
+        /// <summary>Jump 액션이 performed 됐을 때 (Space, 게임패드 등)</summary>
+        private void OnJump(InputAction.CallbackContext context)
+        {
+            // ★ Input Phase 필터링: 반드시 performed(눌린 순간) 단계에서만 실행
+            if (!context.performed) return;
+
+            JumpTriggered = true;
+            Debug.Log("[PlayerController] OnJump 콜백 → facade.RequestJump() 즉시 호출");
+            // 푸시 방식: 콜백에서 즉시 Facade → StateMachine → State로 전달
+            facade.RequestJump();
+        }
+
+        /// <summary>Slide(Crouch) 액션이 performed 됐을 때 (C, 게임패드 등)</summary>
+        private void OnSlide(InputAction.CallbackContext context)
+        {
+            // ★ Input Phase 필터링
+            if (!context.performed) return;
+
+            SlideTriggered = true;
+            // 푸시 방식
+            facade.RequestSlide();
         }
     }
 }
