@@ -8,7 +8,9 @@ public class StandardInputProvider : IInputProvider
     private InputAction jumpAction;
     private InputAction dashAction;
 
-    // 생성자에서 액션 초기화
+    // 새로 추가된 액션
+    private InputAction cleaveAction;
+
     public StandardInputProvider()
     {
         moveAction = new InputAction("Move", binding: "<Gamepad>/leftStick");
@@ -21,13 +23,18 @@ public class StandardInputProvider : IInputProvider
         lookAction = new InputAction("Look", binding: "<Mouse>/delta");
         jumpAction = new InputAction("Jump", binding: "<Keyboard>/space");
         dashAction = new InputAction("Dash", binding: "<Keyboard>/leftShift");
+
+        // 마우스 좌클릭 바인딩
+        cleaveAction = new InputAction("Cleave", binding: "<Mouse>/leftButton");
     }
 
-    // 인터페이스 프로퍼티 구현 (람다식으로 호출될 때마다 최신 값 반환)
     public Vector2 MoveInput => moveAction.ReadValue<Vector2>();
     public Vector2 LookInput => lookAction.ReadValue<Vector2>();
     public bool JumpTriggered => jumpAction.WasPressedThisFrame();
     public bool DashHeld => dashAction.IsInProgress();
+
+    // 새로 추가된 프로퍼티 (버튼을 누르고 있는 동안 true)
+    public bool CleaveHeld => cleaveAction.IsInProgress();
 
     public void Enable()
     {
@@ -35,6 +42,7 @@ public class StandardInputProvider : IInputProvider
         lookAction.Enable();
         jumpAction.Enable();
         dashAction.Enable();
+        cleaveAction.Enable(); // 활성화
     }
 
     public void Disable()
@@ -43,5 +51,6 @@ public class StandardInputProvider : IInputProvider
         lookAction.Disable();
         jumpAction.Disable();
         dashAction.Disable();
+        cleaveAction.Disable(); // 비활성화
     }
 }
