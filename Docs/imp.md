@@ -1,82 +1,68 @@
-📄 1. 문제기술서 (Problem Statement) : 마인드맵 구조
-게임의 핵심 목표와 해결 과제를 한눈에 파악할 수 있는 마인드맵입니다.
+🚀 [Vertigo-Hound] 코어 게임 디자인 문서 (GDD)
+1. 코어 정체성 (Core Identity)
+비주얼 컨셉: 구름 없는 파란 하늘, 상쾌한 바람 소리 등 완벽한 '힐링 Vibe'.
 
-코드 스니펫
-mindmap
-  root((Vertigo Hound
-  Core Concept))
-    Problem
-      밋밋한 3인칭 런닝뷰 한계
-      안전 위주의 플랫포머
-      속도감 저하 및 몰입도 부족
-    Goal
-      1인칭 극한의 속도감
-      시각적 쾌감과 멀미의 경계
-      쉴 틈 없는 조작 강요
-    Key Mechanics
-      수직 낙하 번지점프
-      바닥 ↔ 천장 중력 반전
-      사족보행 착지 회복
-      나선형 벽 타기
-📋 2. 요구사항 정의서 (SRS) 아키텍처 다이어그램
-🧩 2-1. 시스템 파티셔닝 (System Architecture)
-맵(환경)과 플레이어(주체)가 서로 간섭하지 않고 트리거를 통해서만 소통하는 구조입니다.
+플레이 컨셉: 힐링되는 배경 속에서 펼쳐지는, 멀미를 극대화하는 '초고속 하드코어 1인칭 파쿠르'.
 
-코드 스니펫
-graph TD
-    subgraph Map_System [Map System : 환경 제공 및 이벤트 발생]
-        M1[Map Pattern Manager<br>난이도 및 패턴 제어] --> M2[Chunk Pooler<br>오브젝트 풀링/최적화]
-        M2 --> M3[Event Triggers<br>수직 낙하 존, 중력 반전 존 스폰]
-    end
+메인 목표: 둥둥 떠다니는 큐브들을 디딤돌 삼아 극한의 가속도(Momentum)를 모아, 저 멀리 있는 '거대 코어 큐브'를 박살 내는 것.
 
-    subgraph Player_System [Player System : 물리 반응 및 상태 제어]
-        P1[Trigger Detection<br>충돌 및 이벤트 감지] --> P2[FSM Controller<br>상태 강제 전환]
-        P2 --> P3[Physics & Movement<br>RigidBody 제어]
-        P2 --> P4[Camera & Animation<br>1인칭 연출, FOV, 덤블링]
-    end
+2. 게임 루프 (Core Game Loop)
+스폰 (Spawn): 이전 스테이지의 잔해인 안전지대 큐브에서 스폰. 육안으로 저 멀리 웅장하게 진동하는 '거대 코어 큐브' 확인.
 
-    M3 == 1. Collider 충돌 / Trigger 진입 ==> P1
-    P4 -. 2. 시각적 피드백 제공 .-> User
-🏃‍♂️ 2-2. 플레이어 이동 상태 머신 (FSM Diagram)
-클래스로 분리될 각 상태(IState) 간의 전이 조건과 흐름입니다.
+파쿠르 및 가속 (Accelerate): 공중에 떠다니는 다양한 큐브들을 밟고, 넘고, 부수며 모멘텀(속도) 게이지 충전.
 
-코드 스니펫
-stateDiagram-v2
-    [*] --> RunState : 게임 시작
-    
-    state RunState {
-        [*] --> Bipedal : 이족 보행 질주
-    }
-    
-    RunState --> FreeFallState : 수직 낙하 트리거 감지
-    FreeFallState --> QuadRecoveryState : 바닥 충돌 (속도 비례 연산)
-    QuadRecoveryState --> RunState : 충격 흡수 후 1.5초 경과 (폼 회복)
-    
-    RunState --> CeilingState : 점프 + 천장 충돌
-    CeilingState --> RunState : 스페이스바 (중력 원상복구 및 낙하)
-    
-    RunState --> WallRunState : 측면 벽 충돌
-    WallRunState --> RunState : 나선형 하강 완료 또는 점프 이탈
-    
-    note right of FreeFallState
-        - 카메라 180도 백덤블링 연출
-        - Air Strafing (공중 좌우 회피) 가능
-    end note
-    
-    note right of QuadRecoveryState
-        - 카메라 높이 대폭 낮아짐 (사족보행 뷰)
-        - 질주 속도(Momentum) 100% 유지
-    end note
-🏗️ 2-3. 맵 청크 라이프사이클 (Object Pooling Flow)
-메모리(RAM) 부하를 막기 위한 맵 생성 및 소멸 사이클입니다.
+코어 타격 (Core Break): 모멘텀 MAX 상태로 코어에 도달 시, 3인칭 시네마틱으로 전환되며 주먹으로 코어를 박살 냄.
 
-코드 스니펫
-graph LR
-    A[(Chunk Pool<br>대기열 RAM)] -->|1. 패턴 요구| B(Spawn<br>플레이어 전방 시야 밖)
-    B --> C{Player Interaction<br>틈새 통과 / 트리거 작동}
-    C -->|2. 플레이어 통과| D(Despawn<br>카메라 후방 렌더링 종료)
-    D -->|3. 비활성화 및 회수| A
-    
-    style A fill:#f9f,stroke:#333,stroke-width:2px
-    style B fill:#bbf,stroke:#333,stroke-width:2px
-    style D fill:#fbb,stroke:#333,stroke-width:2px
+세계 재구성 (World Rebuild): 코어가 산산조각 나며 튕겨 나간 파편들이 우주 공간에 흩뿌려져 다음 스테이지의 큐브 맵으로 절차적 생성됨.
+
+3. 플레이어 기믹 및 액션 (Player Mechanics)
+A. 기본 이동 및 파쿠르
+모멘텀 시스템: 제한 시간이 아닌 '속도 관성'이 생명줄. 달리고 스킬을 쓸수록 빨라지며, 정체하면 속도가 감소함.
+
+벽 타기 (Wall Run): 큐브의 어떤 면이든 닿으면 밀착. 시선(Camera Normal)이 벽면을 향하도록 보정되어 멀미 유발.
+
+반전 점프: 벽을 차고 도약할 때 카메라 X축이 강제로 360도 회전(Gimbal Lock 방지용 Camera Rig 독립 회전).
+
+B. 오버클럭 대시 (Overclock Dash)
+조작: Shift 입력.
+
+효과: 파란 아우라 파티클 발생. 모멘텀을 소모/폭발시켜 전방으로 Rigidbody.velocity를 강하게 쏨.
+
+C. 시네마틱 자유 낙하 (The Glide Phase)
+발동 조건: 오버클럭 대시 중 낭떠러지로 점프 시 발동.
+
+1단계 (0~3초): 중력이 감소하여 얕게 수평 활공. 카메라는 하늘을 쳐다보며, 주변 큐브들이 미친 듯이 뒤로 쏟아져 내리는 시각 효과 연출.
+
+2단계 (3초 후): 고개를 젖혀 전방 주시. 플레이어는 누운 상태(180도 뒤집힌 시야)로 발부터 날아가며 다음 목적지 큐브를 향해 쏘아짐.
+
+D. 가르기 (Cleave) - 핵심 돌파기
+발동 조건: 자유 낙하 상태에서 마주 오는 큐브와 충돌 직전 타이밍 맞게 액션(또는 자동 충돌).
+
+작동 흐름:
+
+Hit Stop: Time.timeScale 저하로 0.2초간 강한 역경직 및 화면/패드 진동.
+
+자세 리셋 (Camera Spin): 뒤집혀 있던 카메라가 360도 회전하며 0.5초 만에 정방향 시야로 복구.
+
+폭발적 가속 (Burst): 큐브를 반으로 쪼개며, 시야각(FOV)이 120 이상으로 찢어지고 이전 속도의 1.5배로 튕겨 나감.
+
+안정화 (Damping): 낙사 방지를 위해 0.5~1초에 걸쳐 컨트롤 가능한 기본 파쿠르 최고 속도로 스무스하게 감속.
+
+보상: 성공 시 모멘텀 게이지 회복 및 대시 쿨타임 초기화.
+
+4. 맵 디자인 및 시스템 아키텍처
+A. 큐브 생태계 (Cube Types)
+White Cube: 기본 파쿠르용 디딤돌.
+
+Red Cube: 다가가면 두 큐브가 합쳐지며 압사(찌부)를 유도하는 트랩. (아슬아슬하게 회피 시 슬로우 모션 보너스 획득).
+
+Blue Cube: 밟으면 대포처럼 튕겨 나가는 범퍼 기믹.
+
+B. 시스템 제어 및 최적화
+조작계 분리: 물리 충돌체(Capsule)는 회전 없이 XYZ 이동만 담당. 모든 시각적 회전과 덤블링은 내부 자식 객체인 Camera Rig가 전담.
+
+마그네틱 스냅 (Magnetic Snap): 큐브 표면 1.5m 이내 접근 시 플레이어 위치를 표면으로 부드럽게(Lerp) 보정하여 쫀득한 조작감 제공.
+
+코요테 타임 & 입력 버퍼: 유저의 피지컬을 돋보이게 하기 위해, 바닥을 벗어난 직후나 충돌 직전의 사전 입력을 너그럽게 허용.
+
+맵 로딩: 런닝머신 방식이 아닌, 플레이어 전방 시야를 기준으로 큐브의 크기(Scale)가 커지며 나타나는 방식의 오브젝트 풀링(Object Pooling) 적용.
