@@ -33,7 +33,8 @@ public class PlayerController : MonoBehaviour
     private bool wasGrounded;
     private CapsuleCollider capsule;
     private Vector3 groundNormal = Vector3.up;
-
+    [Header("Camera Effects")]
+    public CameraJuiceController juiceController;
     private Rigidbody rb;
     private bool jumpIntended;
     
@@ -64,7 +65,7 @@ public class PlayerController : MonoBehaviour
     {
         CheckGrounded();
         HandleLook();
-
+        UpdateSprintJuice();
         if (!isGrounded)
         {
             currentAirTime += Time.deltaTime;
@@ -84,7 +85,17 @@ public class PlayerController : MonoBehaviour
             jumpIntended = true;
         }
     }
+    void UpdateSprintJuice()
+    {
+        // currentRunTime은 Dash(달리기) 유지 시간이며, runChargeTime(최고 속도에 도달하는 시간)으로 나누어 가속 진행도(0.0 ~ 1.0)를 구합니다.
+        float normalizedAccel = Mathf.Clamp01(currentRunTime / runChargeTime);
 
+        // 쥬스 컨트롤러가 연결되어 있다면, 매 프레임 현재 가속도 상태를 전달!
+        if (juiceController != null)
+        {
+            juiceController.UpdateSprintJuice(normalizedAccel);
+        }
+    }
     void FixedUpdate()
     {
         MovePlayer();
