@@ -1,49 +1,45 @@
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody), typeof(CapsuleCollider))]
-public class PlayerController : MonoBehaviour, IPlayerState
+public class PlayerController : MonoBehaviour
 {
-    [Header("Physics & Movement (Snappy)")]
-    public float maxSpeed = 15f;
-    public float dashSpeed = 35f; // 대시 최고 속도
-    public float groundAccel = 150f;
+    [Header("Movement (Walk & Run)")]
+    public float walkSpeed = 6f;
+    public float runInitialSpeed = 10f; 
+    public float runMaxSpeed = 18f;     
+    public float runChargeTime = 3f;    
+    
+    public float groundAccel = 80f;
     public float airAccel = 30f;
-    public float jumpForce = 10f;
+    public float jumpForce = 12f;
 
-    [Header("Dash & FOV Effects")]
-    public Camera mainCamera;
-    public float normalFOV = 90f;
-    public float dashFOV = 115f; // 대시 시 찢어질 시야각
-    public float fovSpeed = 10f;
+    [Header("Descent & Landing")]
+    public float minFallSpeedForDescent = -5f; // 이 속도 이상 떨어질 때만 하강 레이캐스트 가동
+    public float minAirTimeForRoll = 0.5f;     // 이 시간 이상 공중에 있어야 착지 시 구르기 발동
+
+    [Header("Camera & Look Hierarchy")]
+    [Tooltip("마우스 위아래(Pitch) 회전을 전담하는 피벗입니다.")]
+    public Transform cameraPitchPivot;
+    public float mouseSensitivity = 0.1f;
+    private float xRotation = 0f;
+
+    [Header("Camera Actions (Jump Tricks)")]
+    [Tooltip("액션 회전 전담 스크립트를 할당합니다.")]
+    public CameraActionController cameraActionController;
 
     [Header("Ground Check")]
     public LayerMask groundMask;
     private bool isGrounded;
+    private bool wasGrounded;
     private CapsuleCollider capsule;
-
-    [Header("Camera & Look")]
-    public Transform cameraRig;
-    public float mouseSensitivity = 0.1f;
-    private float xRotation = 0f;
+    private Vector3 groundNormal = Vector3.up;
 
     private Rigidbody rb;
     private bool jumpIntended;
-
+    
     private IInputProvider input;
-    private MomentumSystem momentum; // 매니저 없이 POCO로 모멘텀 제어
-
-    [Header("Wall Jump")]
-    public float wallCheckDistance = 0.8f; // 캡슐 콜라이더 반경보다 살짝 크게 설정 (여유있게 0.8f)
-    private bool isWalled;
-    private Vector3 wallNormal;
-
-    [Header("References")]
-    public TrendyVisualController visualController; // Inspector에서 연결
-    public TrendyCleaveController cleaveController; // 추가된 참조 (DI 용)
-
-    // IPlayerState 구현
-    public bool IsGrounded => isGrounded;
-    public Rigidbody PlayerRigidbody => rb; // 추가된 프로퍼티
+    private float currentRunTime = 0f;
+    private float currentAirTime = 0f;
 
     void Awake()
     {
@@ -53,22 +49,10 @@ public class PlayerController : MonoBehaviour, IPlayerState
         input = new StandardInputProvider();
         input.Enable();
 
-        momentum = new MomentumSystem(); // 의존성 주입
-        
-        // [DI 핵심] 비주얼 컨트롤러에 의존성 주입
-        if (visualController != null)
-        {
-            visualController.Initialize(momentum, input);
-        }
-
-        // [DI 핵심] 가르기 컨트롤러에 의존성 주입
-        if (cleaveController != null)
-        {
-            cleaveController.Initialize(input, this); // IPlayerState 주입
-        }
-
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+        
+        wasGrounded = true; 
     }
 
     void OnDestroy()
@@ -79,9 +63,21 @@ public class PlayerController : MonoBehaviour, IPlayerState
     void Update()
     {
         CheckGrounded();
-        CheckWall(); 
         HandleLook();
-        HandleCameraFOV();
+
+        if (!isGrounded)
+        {
+            currentAirTime += Time.deltaTime;
+            CheckDescentState();
+        }
+        else
+        {
+            currentAirTime = 0f;
+            if (cameraActionController != null)
+            {
+                cameraActionController.ResetDescentPitch();
+            }
+        }
 
         if (input.JumpTriggered)
         {
@@ -100,16 +96,27 @@ public class PlayerController : MonoBehaviour, IPlayerState
         }
     }
 
-    private Vector3 groundNormal = Vector3.up;
+    private void CheckDescentState()
+    {
+        // 최적화: 특정 속도 이상으로 빠르게 하강 중일 때만 연산
+        if (rb.linearVelocity.y < minFallSpeedForDescent)
+        {
+            if (cameraActionController != null)
+            {
+                // 바닥 레이캐스트 대신 순수 체공 시간(Air Time)을 넘김
+                cameraActionController.UpdateDescent(currentAirTime, rb.linearVelocity.y);
+            }
+        }
+    }
 
     private void CheckGrounded()
     {
-        // 경사면 감지를 위해 Sphere 크기를 좀 더 키우고 위치를 상단으로 보정
-        Vector3 bottom = capsule.bounds.center - new Vector3(0, capsule.bounds.extents.y, 0);
-        isGrounded = Physics.CheckSphere(bottom + Vector3.up * 0.3f, 0.45f, groundMask);
+        wasGrounded = isGrounded;
 
-        // 점프 시 씹힘 방지를 위해 정확한 지면 Normal 각도를 추출합니다.
-        if (isGrounded)
+        Vector3 bottom = capsule.bounds.center - new Vector3(0, capsule.bounds.extents.y, 0);
+        bool hitSphere = Physics.CheckSphere(bottom + Vector3.up * 0.3f, 0.45f, groundMask);
+
+        if (hitSphere)
         {
             if (Physics.Raycast(capsule.bounds.center, Vector3.down, out RaycastHit hit, capsule.bounds.extents.y + 0.5f, groundMask))
             {
@@ -119,33 +126,48 @@ public class PlayerController : MonoBehaviour, IPlayerState
             {
                 groundNormal = Vector3.up;
             }
+
+            // 벽점프 등 수직 오브젝트에 닿아서 구르기가 나가는 현상 방지:
+            // 경사각이 50도 이하인 확실한 바닥(Floor)일 때만 Grounded로 판정
+            if (Vector3.Angle(Vector3.up, groundNormal) <= 50f)
+            {
+                isGrounded = true;
+                if (!wasGrounded)
+                {
+                    OnLanded();
+                }
+            }
+            else
+            {
+                isGrounded = false;
+            }
+        }
+        else
+        {
+            isGrounded = false;
+            groundNormal = Vector3.up;
         }
     }
 
-    private void CheckWall()
+    private void OnLanded()
     {
-        isWalled = false;
-
-        // 플레이어의 오른쪽, 왼쪽, 앞쪽으로 짧은 레이저를 쏴서 벽 감지
-        Vector3[] directions = { transform.right, -transform.right, transform.forward };
-
-        foreach (var dir in directions)
+        if (cameraActionController != null)
         {
-            // groundMask를 그대로 활용하여 큐브(벽) 레이어를 감지
-            if (Physics.Raycast(transform.position, dir, out RaycastHit hit, wallCheckDistance, groundMask))
+            // 치명적 높이에서 착지했을 경우 타격감 구르기 구사
+            if (currentAirTime >= minAirTimeForRoll)
             {
-                isWalled = true;
-                wallNormal = hit.normal; // 튕겨나갈 때 사용할 벽의 수직 방향 저장
-                return; // 하나라도 벽에 닿았으면 즉시 종료
+                cameraActionController.TriggerLandingRoll();
+            }
+            else
+            {
+                // 안전한 높이에서 안착하면 진행 중인 공중 회전을 조기 코루틴 종료시킴
+                cameraActionController.InterruptAction();
             }
         }
     }
 
     private void HandleLook()
     {
-        // 가르기 모드(조준 중)일 때는 화면을 얼리고 마우스로 화면상 라인을 그려야 하므로 시점 이동을 잠깐 막음
-        if (cleaveController != null && cleaveController.isAiming) return;
-
         Vector2 lookInput = input.LookInput;
         
         float mouseX = lookInput.x * mouseSensitivity;
@@ -153,84 +175,59 @@ public class PlayerController : MonoBehaviour, IPlayerState
 
         xRotation -= mouseY;
         xRotation = Mathf.Clamp(xRotation, -90f, 90f);
-        cameraRig.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
+        
+        if (cameraPitchPivot != null)
+        {
+            cameraPitchPivot.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
+        }
 
         transform.Rotate(Vector3.up * mouseX);
-    }
-
-    private void HandleCameraFOV()
-    {
-        // 대시 상태면 FOV를 늘리고, 아니면 원래대로 복구
-        bool isDashing = input.DashHeld && momentum.Value > 10f;
-        float targetFOV = isDashing ? dashFOV : normalFOV;
-        
-        mainCamera.fieldOfView = Mathf.Lerp(mainCamera.fieldOfView, targetFOV, fovSpeed * Time.deltaTime);
     }
 
     private void MovePlayer()
     {
         Vector2 moveInput = input.MoveInput;
+        bool isMoving = moveInput.sqrMagnitude > 0.01f;
 
-        // Shift는 이제 무조건 달리기 (모멘텀 제한 해제)
-        float currentTargetSpeed = input.DashHeld ? dashSpeed : maxSpeed;
+        float currentTargetSpeed = walkSpeed;
+
+        if (input.DashHeld && isMoving)
+        {
+            currentRunTime += Time.fixedDeltaTime;
+            float progress = Mathf.Clamp01(currentRunTime / runChargeTime);
+            currentTargetSpeed = Mathf.Lerp(runInitialSpeed, runMaxSpeed, progress);
+        }
+        else
+        {
+            currentRunTime = 0f; 
+            if (!isMoving) currentTargetSpeed = 0f;
+        }
 
         Vector3 targetVelocity = (transform.forward * moveInput.y + transform.right * moveInput.x).normalized * currentTargetSpeed;
         Vector3 currentXZVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
 
-        // 경사면에서 미끄러질 때 조작감을 잃지 않도록 가속도를 더 높게 설정 가능
         float accelRate = isGrounded ? groundAccel : airAccel;
         Vector3 newXZVelocity = Vector3.MoveTowards(currentXZVelocity, targetVelocity, accelRate * Time.fixedDeltaTime);
 
         rb.linearVelocity = new Vector3(newXZVelocity.x, rb.linearVelocity.y, newXZVelocity.z);
-
-        // 모멘텀은 뒤에서 조용히 쌓임 (가르기를 위한 에너지원)
-        float flatSpeed = currentXZVelocity.magnitude;
-        momentum.Calculate(flatSpeed, maxSpeed, input.DashHeld, Time.fixedDeltaTime);
     }
 
     private void Jump()
     {
-        // 관성(X, Z)을 유지하면서 점프를 보장하기 위한 개선된 로직
-        if (isGrounded || isWalled)
+        if (isGrounded)
         {
-            // Y축 속도만 0으로 초기화하여 하강력 등만 상쇄 (X, Z 보존)
             rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
+            Vector3 jumpDir = Vector3.Lerp(Vector3.up, groundNormal, 0.6f).normalized;
+            rb.AddForce(jumpDir * jumpForce, ForceMode.Impulse);
 
-            if (isWalled && !isGrounded)
+            float v0 = jumpForce / rb.mass;
+            float g = Physics.gravity.magnitude; 
+            float timeToApex = v0 / g;
+
+            if (cameraActionController != null)
             {
-                // 벽 점프 - 벽에서 밀쳐내며 비스듬하게 위로
-                Vector3 jumpDir = (Vector3.up + wallNormal).normalized;
-                rb.AddForce(jumpDir * jumpForce * 1.2f, ForceMode.Impulse);
-                momentum.AddBoost(20f);
+                 cameraActionController.TriggerRandomPattern(timeToApex);
             }
-            else
-            {
-                // 일반/경사면 점프 - 마찰로 인한 씹힘을 날리기 위해 바닥의 기울기(Normal) 방향을 섞어서 추진력 적용
-                Vector3 jumpDir = Vector3.Lerp(Vector3.up, groundNormal, 0.6f).normalized;
-                rb.AddForce(jumpDir * jumpForce, ForceMode.Impulse);
-            }
-        }
-    }
-
-    void OnDrawGizmos()
-    {
-        CapsuleCollider cap = GetComponent<CapsuleCollider>();
-        if (cap != null)
-        {
-            Vector3 bottom = cap.bounds.center - new Vector3(0, cap.bounds.extents.y, 0);
-            Vector3 sphereCenter = bottom + Vector3.up * 0.3f;
-            
-            // 바닥 감지 (초록색 = Grounded, 빨간색 = 공중)
-            Gizmos.color = isGrounded ? Color.green : Color.red;
-            Gizmos.DrawWireSphere(sphereCenter, 0.45f);
-        }
-
-        // 벽 감지 레이저 표시
-        Gizmos.color = isWalled ? Color.green : Color.yellow;
-        Vector3[] directions = { transform.right, -transform.right, transform.forward };
-        foreach (var dir in directions)
-        {
-            Gizmos.DrawRay(transform.position, dir * wallCheckDistance);
         }
     }
 }
