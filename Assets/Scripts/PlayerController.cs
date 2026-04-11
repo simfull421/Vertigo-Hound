@@ -17,6 +17,20 @@ public class PlayerController : MonoBehaviour
     public float minFallSpeedForDescent = -5f; // 이 속도 이상 떨어질 때만 하강 레이캐스트 가동
     public float minAirTimeForRoll = 0.5f;     // 이 시간 이상 공중에 있어야 착지 시 구르기 발동
 
+    [Header("Wall Run & Jump")]
+    public LayerMask wallLayerMask;
+    public float wallCheckDistance = 1.5f;
+    public float wallRunSpeed = 15f;
+    public float wallRunGravity = 2f; 
+    public float wallJumpForce = 15f;
+
+    private bool isWallLeft;
+    private bool isWallRight;
+    private bool isWallRunning;
+    private bool wasWallRunning;
+    private Vector3 wallNormal;
+    private float wallJumpTimer = 0f;
+
     [Header("Camera & Look Hierarchy")]
     [Tooltip("마우스 위아래(Pitch) 회전을 전담하는 피벗입니다.")]
     public Transform cameraPitchPivot;
@@ -64,6 +78,10 @@ public class PlayerController : MonoBehaviour
     void Update()
     {
         CheckGrounded();
+        
+        if (wallJumpTimer > 0f) wallJumpTimer -= Time.deltaTime;
+        CheckWall();
+
         HandleLook();
         UpdateSprintJuice();
         if (!isGrounded)
@@ -93,18 +111,97 @@ public class PlayerController : MonoBehaviour
         // 쥬스 컨트롤러가 연결되어 있다면, 매 프레임 현재 가속도 상태를 전달!
         if (juiceController != null)
         {
-            juiceController.UpdateSprintJuice(normalizedAccel);
+            if (isWallRunning)
+            {
+                juiceController.UpdateWallRunJuice(isWallRight, normalizedAccel);
+            }
+            else
+            {
+                juiceController.UpdateSprintJuice(normalizedAccel, isGrounded);
+            }
         }
     }
     void FixedUpdate()
     {
-        MovePlayer();
+        if (isWallRunning)
+        {
+            WallRunMovement();
+        }
+        else
+        {
+            rb.useGravity = true;
+            MovePlayer();
+        }
 
         if (jumpIntended)
         {
-            Jump();
+            if (isWallRunning)
+            {
+                WallJump();
+            }
+            else
+            {
+                Jump();
+            }
             jumpIntended = false;
         }
+    }
+
+    private void CheckWall()
+    {
+        if (wallJumpTimer > 0f) 
+        {
+            isWallLeft = false;
+            isWallRight = false;
+            isWallRunning = false;
+            return;
+        }
+
+        isWallRight = Physics.Raycast(transform.position, transform.right, out RaycastHit rightHit, wallCheckDistance, wallLayerMask);
+        isWallLeft = Physics.Raycast(transform.position, -transform.right, out RaycastHit leftHit, wallCheckDistance, wallLayerMask);
+
+        if (isWallRight) wallNormal = rightHit.normal;
+        else if (isWallLeft) wallNormal = leftHit.normal;
+        else wallNormal = Vector3.zero;
+
+        wasWallRunning = isWallRunning;
+        // 공중에 있고, 벽이 있고, 전진(W) 중일 때만 벽타기
+        isWallRunning = !isGrounded && (isWallLeft || isWallRight) && (input.MoveInput.y > 0);
+
+        if (isWallRunning && !wasWallRunning)
+        {
+            if (juiceController != null) juiceController.TriggerWallAttachJuice(isWallRight);
+        }
+    }
+
+    private void WallRunMovement()
+    {
+        rb.useGravity = false;
+        
+        Vector3 wallForward = Vector3.Cross(wallNormal, Vector3.up);
+
+        // 진행 방향과 카메라(몸체) 시선 내적이 음수면 반대로 교정
+        if (Vector3.Dot(transform.forward, wallForward) < 0)
+        {
+            wallForward = -wallForward; 
+        }
+
+        // 고정 하강 속도(-wallRunGravity) 적용
+        rb.linearVelocity = new Vector3(wallForward.x * wallRunSpeed, -wallRunGravity, wallForward.z * wallRunSpeed);
+    }
+
+    private void WallJump()
+    {
+        rb.useGravity = true;
+        // Y 속도 초기화하여 안정적인 곡선 유도
+        rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
+
+        // 핵심 핑퐁 점프: 카메라 정면 + 벽 법선 + 수직
+        Vector3 jumpDir = (cameraPitchPivot.forward * 0.5f) + (wallNormal * 1.5f) + (Vector3.up * 1.0f);
+        rb.AddForce(jumpDir.normalized * wallJumpForce, ForceMode.Impulse);
+
+        wallJumpTimer = 0.2f;
+        isWallRunning = false;
     }
 
     private void CheckDescentState()
@@ -112,10 +209,19 @@ public class PlayerController : MonoBehaviour
         // 최적화: 특정 속도 이상으로 빠르게 하강 중일 때만 연산
         if (rb.linearVelocity.y < minFallSpeedForDescent)
         {
-            if (cameraActionController != null)
+            /*
+             * 공중 고개 숙임 (강제 시야 뺏김) 주석 처리하여
+             * 떨어지는 내내 마우스로 자유롭게 다음 타겟을 찾을 수 있도록 수정
+             * if (cameraActionController != null)
+             * {
+             *     cameraActionController.UpdateDescent(currentAirTime, rb.linearVelocity.y);
+             * }
+             */
+
+            // 낙하 공기저항 쉐이크만 별도로 남김
+            if (juiceController != null)
             {
-                // 바닥 레이캐스트 대신 순수 체공 시간(Air Time)을 넘김
-                cameraActionController.UpdateDescent(currentAirTime, rb.linearVelocity.y);
+                juiceController.UpdateDescentShake(currentAirTime, rb.linearVelocity.y);
             }
         }
     }

@@ -18,20 +18,20 @@ public class CameraJuiceController : MonoBehaviour
     
     [Header("Sprint Juice (Head Bob & Acceleration)")]
     public float sprintBobFrequency = 10f;
-    public float sprintBobAmplitudeX = 0.4f;
-    public float sprintBobAmplitudeY = 0.2f;
-    [SerializeField] private float sprintBobTiltZ = 2.0f; // 좌우 비틀림(Roll) 각도
-    [SerializeField] private float sprintBobDipX = 1.5f;  // 발 디딜 때 고개 숙임(Pitch) 각도
+    public float sprintBobAmplitudeX = 0.9f;
+    public float sprintBobAmplitudeY = 0.5f;
+    [SerializeField] private float sprintBobTiltZ = 7.0f; // 좌우 비틀림(Roll) 각도
+    [SerializeField] private float sprintBobDipX = 4.0f;  // 발 디딜 때 고개 숙임(Pitch) 각도
     public float sprintStartPitchAngle = 15f; 
     public float sprintMaxFOV = 110f;
-    public float sprintEffectSpeed = 5f;
+    public float sprintEffectSpeed = 12f;
 
     [Header("Descent & Landing Juice")]
     public float maxShakeIntensity = 0.5f;
     public float shakeFrequency = 50f;
     public float landingDropDepth = -0.5f;   // 착지 웅크림 깊이
     public float dropDuration = 0.1f;        // 빠른 하강 (Fast-down)
-    public float recoverDuration = 0.4f;     // 느린 복구 (Slow-up)
+    public float recoverDuration = 0.3f;     // 느린 복구 (Slow-up)
 
     private MotionBlur motionBlur;
     private LensDistortion lensDistortion; 
@@ -178,32 +178,40 @@ public class CameraJuiceController : MonoBehaviour
         landingDropCoroutine = null;
     }
 
-    public void UpdateSprintJuice(float normalizedAccel)
+    public void UpdateSprintJuice(float normalizedAccel, bool isGrounded)
     {
-        sprintBobTimer += Time.deltaTime * normalizedAccel;
+        float bobX = 0f;
+        float bobY = 0f;
+        float bobTiltZ = 0f;
+        float bobDipX = 0f;
+        float basePitch = 0f;
 
-        // --- 1. 위치 이동 (기존 U자 궤적) ---
-        float bobX = Mathf.Sin(sprintBobTimer * sprintBobFrequency) * sprintBobAmplitudeX;
-        float bobY = -Mathf.Cos(sprintBobTimer * sprintBobFrequency * 2f) * sprintBobAmplitudeY;
+        // 인간의 생체 역학 비틀림 로직은 땅을 밟고 있을 때만 완전히 구동
+        if (isGrounded)
+        {
+            sprintBobTimer += Time.deltaTime * normalizedAccel;
 
-        // --- 2. [NEW] 회전 틸트(Roll) & 끄덕임(Pitch) 계산 ---
-        // 좌우 위치 이동(Sin)과 싱크를 맞춰 반대로 기울어짐 (왼쪽으로 가면 오른쪽으로 틸트)
-        float bobTiltZ = -Mathf.Sin(sprintBobTimer * sprintBobFrequency) * sprintBobTiltZ;
-        // 상하 위치 이동(Cos)과 싱크를 맞춰 발이 땅에 닿을 때(주기가 꺾일 때) 끄덕임 발생
-        float bobDipX = Mathf.Cos(sprintBobTimer * sprintBobFrequency * 2f) * sprintBobDipX;
+            // --- 1. 위치 이동 (기존 U자 궤적) ---
+            bobX = Mathf.Sin(sprintBobTimer * sprintBobFrequency) * sprintBobAmplitudeX;
+            bobY = -Mathf.Cos(sprintBobTimer * sprintBobFrequency * 2f) * sprintBobAmplitudeY;
+
+            // --- 2. 회전 틸트(Roll) & 끄덕임(Pitch) 계산 ---
+            bobTiltZ = -Mathf.Sin(sprintBobTimer * sprintBobFrequency) * sprintBobTiltZ;
+            bobDipX = Mathf.Cos(sprintBobTimer * sprintBobFrequency * 2f) * sprintBobDipX;
+
+            basePitch = Mathf.Lerp(sprintStartPitchAngle, 0f, normalizedAccel);
+        }
 
         Vector3 targetPos = originalLocalPos + new Vector3(bobX, bobY, 0f) * normalizedAccel;
 
         // --- 3. 회전 적용 (가속 복구 피치 + 걸음걸이 끄덕임 + 좌우 비틀림) ---
-        // 끄덕임(bobDipX)과 비틀림(bobTiltZ)도 normalizedAccel을 곱해 멈출 땐 스르륵 사라지게 만듦
-        float basePitch = Mathf.Lerp(sprintStartPitchAngle, 0f, normalizedAccel);
         float finalPitch = basePitch + (bobDipX * normalizedAccel);
         float finalRoll = bobTiltZ * normalizedAccel;
 
-        // X축은 피치(위아래 고개), Z축은 롤(좌우 갸우뚱)
+        // isGrounded가 false가 되는 순간, 연산값은 0이 되어 현재 프레임부터 정면(originalLocalRot)으로 부드럽게 Lerp 복구
         Quaternion targetRot = originalLocalRot * Quaternion.Euler(finalPitch, 0f, finalRoll);
 
-        // --- 4. FOV 및 Lerp 보간 (기존과 동일) ---
+        // --- 4. FOV 보간 (어기적거림과 무관하게 속도 기준으로 펌핑 유지) ---
         float targetFOV = Mathf.Lerp(baseFOV, sprintMaxFOV, normalizedAccel);
 
         if (targetCamera != null)
@@ -226,5 +234,48 @@ public class CameraJuiceController : MonoBehaviour
         if (motionBlur != null) motionBlur.intensity.Override(0f);
         if (lensDistortion != null) lensDistortion.intensity.Override(0f);
         if (chromaticAberration != null) chromaticAberration.intensity.Override(0f);
+    }
+
+    public void TriggerWallAttachJuice(bool isWallRight)
+    {
+        // 1. 벽에 닿는 순간 화면이 미세하게 흔들림 (카메라 Y축을 순간적으로 살짝 깎음)
+        // 2. FOV를 순간적으로 확 넓혔다가 제자리로 돌아오게 하여 충격파 연출
+        TriggerPulsingEffect(0.2f); // 기존 구르기 때 썼던 펄스를 재활용!
+    }
+
+    public void UpdateWallRunJuice(bool isWallRight, float normalizedAccel)
+    {
+        // 1. [수정됨] 체중 이동: 오른쪽 벽이면 왼쪽(+15도)으로 꺾어 벽을 밀어냄
+        float targetTilt = isWallRight ? 15f : -15f;
+        
+        // 2. 짐승의 템포: 일반 달리기보다 발구름 속도 2배 가속
+        sprintBobTimer += Time.deltaTime * normalizedAccel * 2.0f;
+
+        // 3. [핵심] Lerp가 뭉개지 못하도록 진폭(Amplitude)을 3배로 폭주시킴!
+        float bobY = -Mathf.Abs(Mathf.Sin(sprintBobTimer * sprintBobFrequency)) * (sprintBobAmplitudeY * 3f);
+        // 벽 반대편으로 몸이 튕겨 나가는 반발력
+        float bobX = (isWallRight ? -1f : 1f) * Mathf.Abs(Mathf.Cos(sprintBobTimer * sprintBobFrequency)) * (sprintBobAmplitudeX * 2f);
+
+        // 4. [NEW 추가] 위치 이동만으론 밋밋함. 발을 구를 때마다 고개(Pitch)를 6도씩 밑으로 쾅쾅 처박음!
+        float bobPitch = Mathf.Abs(Mathf.Sin(sprintBobTimer * sprintBobFrequency)) * 6f;
+
+        // 5. Transform 적용 (Lerp)
+        Vector3 targetPos = originalLocalPos + new Vector3(bobX, bobY, 0f);
+        
+        // 타겟 로테이션에 피치(찍어누름)와 롤(반대편 틸트)을 동시에 적용
+        Quaternion targetRot = originalLocalRot * Quaternion.Euler(bobPitch, 0f, targetTilt);
+
+        if (targetCamera != null) 
+        {
+            // 카메라 움직임 (이펙트 스피드를 살짝 높여서 더 날카롭게 따라가도록 함)
+            float aggressiveLerpSpeed = sprintEffectSpeed * 1.5f; 
+            
+            targetCamera.transform.localPosition = Vector3.Lerp(targetCamera.transform.localPosition, targetPos, Time.deltaTime * aggressiveLerpSpeed);
+            targetCamera.transform.localRotation = Quaternion.Lerp(targetCamera.transform.localRotation, targetRot, Time.deltaTime * aggressiveLerpSpeed);
+            
+            // FOV 펌핑 (기존 유지)
+            float targetFOV = Mathf.Lerp(baseFOV, sprintMaxFOV, normalizedAccel);
+            targetCamera.fieldOfView = Mathf.Lerp(targetCamera.fieldOfView, targetFOV, Time.deltaTime * aggressiveLerpSpeed);
+        }
     }
 }

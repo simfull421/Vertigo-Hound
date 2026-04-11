@@ -132,12 +132,13 @@ public class CameraActionController : MonoBehaviour
         if (landingRollCoroutine != null) StopCoroutine(landingRollCoroutine);
         
         descentLookTimer = 0f;
-        landingRollCoroutine = StartCoroutine(PerformLandingRoll(1.7f)); // 착지 구르기 시간 1.7초로 연장
+        landingRollCoroutine = StartCoroutine(PerformLandingRoll(0.4f)); // 유저 인지를 위해 0.4초로 연장
         
         if (juiceController != null)
         {
             juiceController.UpdateDescentShake(0f, 0f);
             juiceController.TriggerLandingDrop();
+            juiceController.TriggerPulsingEffect(0.4f); // 구르기 시간에 맞춘 펄스
         }
     }
 
