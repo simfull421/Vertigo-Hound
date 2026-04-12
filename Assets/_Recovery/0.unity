@@ -495,16 +495,15 @@ MonoBehaviour:
   targetCamera: {fileID: 330585545}
   baseFOV: 90
   postProcessingVolume: {fileID: 832575518}
-  player: {fileID: 1392106686}
   sprint:
-    baseFrequency: 12
-    maxAmplitudeX: 0.05
-    maxAmplitudeY: 0.04
-    maxTiltZ: 0.05
-    maxDipX: 0.5
+    sprintBobFrequency: 10
+    sprintBobAmplitudeX: 0.63
+    sprintBobAmplitudeY: 0.35
+    sprintBobTiltZ: 7
+    sprintBobDipX: 4
     sprintStartPitchAngle: 15
-    fovMultiplier: 1.2
-    maxFOV: 110
+    sprintMaxFOV: 110
+    sprintEffectSpeed: 12
   wallRun:
     wallRunTiltZ: 15
     wallRunFrictionShake: 0.03
