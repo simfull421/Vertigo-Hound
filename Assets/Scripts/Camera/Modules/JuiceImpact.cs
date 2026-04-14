@@ -69,53 +69,53 @@ public sealed class JuiceImpact
     {
         float targetRoll = UnityEngine.Random.value > 0.5f ? vaultTiltAngle : -vaultTiltAngle;
         
-        // 0.15초 안에 매우 빠르게 탁! 하고 꺾였다가 돌아오게 강제 제한
-        float swiftTime = 0.15f; 
-        float halfTime = swiftTime / 2f;
+        // 3단계: 부드럽게 꺾이고 → 유지 → 부드럽게 복귀
+        float tiltInTime = 0.3f;       // 틸트 진입 (부드럽게)
+        float recoverTime = 0.25f;     // 틸트 복귀
+        float holdTime = Mathf.Max(0f, duration - tiltInTime - recoverTime); // 중간 유지
+
         float elapsed = 0f;
 
-        // 1. 순식간에 꺾임 (0.075초)
-        while (elapsed < halfTime)
+        // Phase 1: 부드럽게 꺾임
+        while (elapsed < tiltInTime)
         {
             elapsed += Time.deltaTime;
-            float t = elapsed / halfTime;
-            float curveT = 1f - Mathf.Pow(1f - t, 4f); // 가혹한 보간 곡선 (탁!)
-            
+            float t = Mathf.Clamp01(elapsed / tiltInTime);
+            float curveT = t * t * (3f - 2f * t); // SmoothStep
+
             PosOffset = new Vector3(0f, Mathf.Lerp(0f, vaultDipDepth, curveT), 0f);
             float currentRoll = Mathf.Lerp(0f, targetRoll, curveT);
-            float currentPitch = Mathf.Lerp(0f, 8f, curveT);
-            
+            float currentPitch = Mathf.Lerp(0f, 5f, curveT);
             RotOffset = new Vector3(currentPitch, 0f, currentRoll);
 
             yield return null;
         }
 
-        // 2. 순식간에 복구됨 (0.075초)
+        // Phase 2: 볼트 도중 유지
+        if (holdTime > 0f)
+        {
+            yield return new WaitForSeconds(holdTime);
+        }
+
+        // Phase 3: 부드럽게 복귀
         elapsed = 0f;
         Vector3 peakPos = PosOffset;
         Vector3 peakRot = RotOffset;
 
-        while (elapsed < halfTime)
+        while (elapsed < recoverTime)
         {
             elapsed += Time.deltaTime;
-            float t = elapsed / halfTime;
-            float curveT = 1f - Mathf.Pow(1f - t, 4f);
-            
+            float t = Mathf.Clamp01(elapsed / recoverTime);
+            float curveT = t * t * (3f - 2f * t); // SmoothStep
+
             PosOffset = Vector3.Lerp(peakPos, Vector3.zero, curveT);
             RotOffset = Vector3.Lerp(peakRot, Vector3.zero, curveT);
-            
+
             yield return null;
         }
 
         PosOffset = Vector3.zero;
         RotOffset = Vector3.zero;
-
-        // 요청된 duration이 더 길다면 남은 시간동안 타 효과의 겹침 방지를 위해 홀드
-        if (duration > swiftTime)
-        {
-            yield return new WaitForSeconds(duration - swiftTime);
-        }
-
         _vaultJuiceCoroutine = null;
     }
 

@@ -6,7 +6,8 @@ using System.Collections;
 public sealed class JuiceSlide
 {
     [Header("Slide Juice")]
-    public float slidePitchAngle = -25f; // -15도 -> -25도로 강하게 젖혀 에이펙스 느낌 연출
+    public float slidePitchAngle = -25f;
+    public float slideTiltZ = 5f;        // 슬라이딩 시 랜덤 좌/우 기울기 (도)
     public float slideJuiceSpeed = 15f;
     public float standUpDipPitch = 20f;
     public float standUpRecoverDuration = 0.4f;
@@ -17,6 +18,7 @@ public sealed class JuiceSlide
 
     private bool _isSlidingJuice;
     private float _targetSlideDipAmount;
+    private float _currentTiltDirection; // 랜덤 좌/우 틸트 방향
     private Coroutine _standUpDipCoroutine;
 
     private CameraJuiceController _hub;
@@ -33,6 +35,7 @@ public sealed class JuiceSlide
         
         _isSlidingJuice = true;
         _targetSlideDipAmount = dipAmount;
+        _currentTiltDirection = UnityEngine.Random.value > 0.5f ? 1f : -1f; // 랜덤 방향
     }
 
     public void TriggerSlideEnd(bool isJumpHop = false)
@@ -48,7 +51,7 @@ public sealed class JuiceSlide
         if (_isSlidingJuice)
         {
             Vector3 targetPos = Vector3.down * _targetSlideDipAmount;
-            Vector3 targetRot = new Vector3(slidePitchAngle, 0f, 0f);
+            Vector3 targetRot = new Vector3(slidePitchAngle, 0f, slideTiltZ * _currentTiltDirection);
 
             float lerpSpeed = Time.deltaTime * slideJuiceSpeed;
             PosOffset = Vector3.Lerp(PosOffset, targetPos, lerpSpeed);

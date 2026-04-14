@@ -501,19 +501,23 @@ MonoBehaviour:
     maxAmplitudeX: 0.15
     maxAmplitudeY: 0.04
     maxTiltZ: 1.5
-    maxPitchX: 0.5
+    maxPitchX: 2
     walkFrequency: 5
     runFrequency: 10
     effortLerpSpeed: 5
     walkFOV: 90
     maxFOV: 110
+    noisePosAmplitude: 0.003
+    noiseRotAmplitude: 0.15
+    noiseSpeed: 15
   wallRun:
     wallRunTiltZ: 15
     wallRunFrictionShake: 0.03
     wallRunFOV: 120
     sprintEffectSpeed: 12
   slide:
-    slidePitchAngle: -15
+    slidePitchAngle: -25
+    slideTiltZ: 5
     slideJuiceSpeed: 15
     standUpDipPitch: 20
     standUpRecoverDuration: 0.4
@@ -524,7 +528,7 @@ MonoBehaviour:
     dropDuration: 0.15
     recoverDuration: 0.35
     vaultDipDepth: -0.4
-    vaultTiltAngle: 3
+    vaultTiltAngle: 15
     burstFOV: 115
     fovCurve:
       serializedVersion: 2
@@ -1230,10 +1234,10 @@ MonoBehaviour:
     wallRunGravity: 2
     wallJumpForce: 15
   slider:
-    minSpeedForSlide: 8
+    minSpeedForSlide: 5
     crouchSpeed: 3
-    slideImpulse: 15
-    slideDragAccumulation: 9
+    slideImpulse: 22
+    slideDragAccumulation: 25
     slideHeightRatio: 0.5
   vault:
     vaultLayerMask:

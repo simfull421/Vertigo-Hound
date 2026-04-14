@@ -5,10 +5,10 @@ using System;
 public sealed class PlayerSlider
 {
     [Header("Sliding (Hardcore)")]
-    public float minSpeedForSlide = 8f;     
+    public float minSpeedForSlide = 5f;     
     public float crouchSpeed = 3f;
-    public float slideImpulse = 15f;        
-    public float slideDragAccumulation = 9f;
+    public float slideImpulse = 22f;        // 폭발적 초기 가속
+    public float slideDragAccumulation = 25f; // 강한 감속 (짧고 빠르게)
     public float slideHeightRatio = 0.5f;
 
     public bool IsSliding { get; private set; }
@@ -84,7 +84,7 @@ public sealed class PlayerSlider
         }
         else
         {
-            if (!_hub.InputProv.SlideHeld || currentSpeed <= minSpeedForSlide - 2f || !_hub.movement.IsGrounded || _hub.wallRunner.IsWallRunning)
+            if (!_hub.InputProv.SlideHeld || currentSpeed <= crouchSpeed || !_hub.movement.IsGrounded || _hub.wallRunner.IsWallRunning)
             {
                 AttemptStopSlide();
             }

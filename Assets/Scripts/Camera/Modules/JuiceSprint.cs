@@ -8,7 +8,7 @@ public sealed class JuiceSprint
     public float maxAmplitudeX = 0.15f;  // 좌우 X축
     public float maxAmplitudeY = 0.04f;  // V자 강하 Y축 (보조)
     public float maxTiltZ = 1.5f;        // 반대 틸트 Z축 (은은한 원심력)
-    public float maxPitchX = 0.5f;       // 앞숙임 X축 (미세 끄덕임)
+    public float maxPitchX = 2.0f;       // 앞숙임 X축 (발 착지 시 끄덕임)
 
     [Header("진동수 설정 (Frequency)")]
     public float walkFrequency = 5f;     // 걷기 왕복 속도 (느린 보폭)
@@ -18,6 +18,11 @@ public sealed class JuiceSprint
     [Header("FOV 설정")]
     public float walkFOV = 90f;
     public float maxFOV = 110f;
+
+    [Header("카메라 노이즈 (Camera Noise)")]
+    public float noisePosAmplitude = 0.003f;   // 위치 노이즈 강도 (1x 기준)
+    public float noiseRotAmplitude = 0.15f;    // 회전 노이즈 강도 (1x 기준, 도)
+    public float noiseSpeed = 15f;             // 노이즈 변화 속도
 
     public Vector3 PosOffset { get; private set; }
     public Vector3 RotOffset { get; private set; }
@@ -66,9 +71,18 @@ public sealed class JuiceSprint
         float finalTiltZ = p * maxTiltZ * intensity;
         float finalPitchX = Mathf.Abs(p) * maxPitchX * intensity;
 
-        // 결과 대입
-        PosOffset = new Vector3(finalX, finalY, 0f);
-        RotOffset = new Vector3(finalPitchX, 0f, finalTiltZ);
+        // 6. 카메라 노이즈 (Perlin Noise) - 걷기 1x, 달리기 2x
+        float noiseMultiplier = _smoothedRatio * 2f;
+        float nt = Time.time * noiseSpeed;
+
+        float noisePX = (Mathf.PerlinNoise(nt, 0f) - 0.5f) * 2f * noisePosAmplitude * noiseMultiplier;
+        float noisePY = (Mathf.PerlinNoise(0f, nt) - 0.5f) * 2f * noisePosAmplitude * noiseMultiplier;
+        float noiseRX = (Mathf.PerlinNoise(nt + 100f, 0f) - 0.5f) * 2f * noiseRotAmplitude * noiseMultiplier;
+        float noiseRZ = (Mathf.PerlinNoise(0f, nt + 200f) - 0.5f) * 2f * noiseRotAmplitude * noiseMultiplier;
+
+        // 결과 대입 (V자 진자운동 + 노이즈 합산)
+        PosOffset = new Vector3(finalX + noisePX, finalY + noisePY, 0f);
+        RotOffset = new Vector3(finalPitchX + noiseRX, 0f, finalTiltZ + noiseRZ);
 
         // FOV 스무딩 연동
         FovOverride = Mathf.Lerp(walkFOV, maxFOV, _smoothedRatio);
