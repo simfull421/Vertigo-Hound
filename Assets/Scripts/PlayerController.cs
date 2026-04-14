@@ -16,8 +16,7 @@ public class PlayerController : MonoBehaviour
     public PlayerWallRunner wallRunner = new PlayerWallRunner();
     public PlayerSlider slider = new PlayerSlider();
     public PlayerVault vault = new PlayerVault();
-    public PlayerWallRebound wallRebound = new PlayerWallRebound();
-
+   
     private bool _jumpIntended;
 
     void Awake()
@@ -35,7 +34,7 @@ public class PlayerController : MonoBehaviour
         wallRunner.Initialize(this);
         slider.Initialize(this);
         vault.Initialize(this);
-        wallRebound.Initialize(this);
+    
     }
 
     void OnDestroy()
@@ -49,8 +48,7 @@ public class PlayerController : MonoBehaviour
         wallRunner.UpdateModule();
         slider.UpdateModule();
         vault.UpdateModule(); // Smart Reticle용 상시 감지 루프 작동
-        wallRebound.UpdateModule(); // Rebound UI 피드백 감지 루프 작동
-
+   
         if (InputProv.JumpTriggered)
         {
             _jumpIntended = true;
@@ -78,15 +76,9 @@ public class PlayerController : MonoBehaviour
 
         if (_jumpIntended)
         {
-            // 1순위: 막다른 코너나 벽을 만나서 튕겨 벗어나는 행동 최우선 처리
-            wallRebound.HandleJump();
-            if (wallRebound.JustRebounded)
-            {
-                _jumpIntended = false;
-                return;
-            }
+    
 
-            // 2순위: Vault (뜀틀) - 이미 Update 루프에서 캐싱된 결과를 활용
+            //  Vault (뜀틀) - 이미 Update 루프에서 캐싱된 결과를 활용
             if (!vault.IsVaulting)
             {
                 vault.HandleJump();

@@ -60,19 +60,19 @@ public sealed class JuiceWallRun
         float targetTilt = isWallRight ? wallRunTiltZ : -wallRunTiltZ;
         
         // Idea B: 벽에 긁히는 듯한 미세 고주파 마찰 진동 (Friction Shake)
-        _bobTimer += Time.deltaTime * 50f; // 매우 빠른 주파수
-        float frictionX = Mathf.Sin(_bobTimer) * wallRunFrictionShake;
-        
-        _targetPosOffset = new Vector3(frictionX, 0f, 0f); // Y밥 삭제하고 X 파동만
-        _targetRotOffset = new Vector3(0f, 0f, targetTilt);
+       // Idea B: 벽에 긁히는 듯한 미세 고주파 마찰 진동 (Friction Shake)
+_bobTimer += Time.deltaTime * 50f; // 매우 빠른 주파수
+float frictionX = Mathf.Sin(_bobTimer) * wallRunFrictionShake;
 
-        // Idea C: 스피드라인 모드 (극강의 왜곡 FOV 120)
-        _targetFovOverride = Mathf.Lerp(_hub.baseFOV, wallRunFOV, normalizedAccel);
+// Idea C: 스피드라인 모드
+_targetFovOverride = Mathf.Lerp(_hub.baseFOV, wallRunFOV, normalizedAccel);
 
-        PosOffset = Vector3.Lerp(PosOffset, _targetPosOffset, Time.deltaTime * speed);
-        RotOffset = Vector3.Lerp(RotOffset, _targetRotOffset, Time.deltaTime * speed);
-        FovOverride = Mathf.Lerp(FovOverride, _targetFovOverride, Time.deltaTime * speed);
+// 위치 파동(frictionX)은 Lerp 없이 다이렉트 대입! 
+PosOffset = new Vector3(frictionX, 0f, 0f);
 
+// 틸트 회전과 FOV만 부드럽게 Lerp
+RotOffset = Vector3.Lerp(RotOffset, new Vector3(0f, 0f, targetTilt), Time.deltaTime * speed);
+FovOverride = Mathf.Lerp(FovOverride, _targetFovOverride, Time.deltaTime * speed);
         // Idea C (계속): 색수차(Chromatic Aberration) 최대로 찢어 공간 왜곡
         if (_chromaticAberration != null)
         {

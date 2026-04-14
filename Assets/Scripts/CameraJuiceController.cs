@@ -12,6 +12,7 @@ public class CameraJuiceController : MonoBehaviour
 
     [Header("Player Reference (허브가 직접 물리 상태를 읽음)")]
     public PlayerController player;
+    public CameraActionController actionController;
 
     [Header("Modules (POCO)")]
     public JuiceSprint sprint = new JuiceSprint();
@@ -65,30 +66,37 @@ public class CameraJuiceController : MonoBehaviour
     {
         if (targetCamera == null || player == null) return;
 
-        // ── Step 1: 물리 상태 읽기 (FixedUpdate 완료 후이므로 안전) ──
+        // ── Step 1: 물리 상태 읽기 ──
         Rigidbody rb = player.Rb;
         float currentSpeed = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z).magnitude;
         float speedRatio = Mathf.Clamp01(currentSpeed / player.movement.runMaxSpeed);
+        
+        // 공중에 떠있으면 헤드밥 비율을 강제로 0으로 만듦 (공중 꿀렁임 원천 차단)
+        float groundedRatio = player.movement.IsGrounded ? speedRatio : 0f;
 
-        // ── Step 2: 각 모듈 업데이트 (오프셋 계산) ──
+        // ── Step 2: 각 모듈 업데이트 ──
         if (player.vault.IsVaulting)
         {
-            sprint.UpdateModule(0f, 0f);
+            sprint.UpdateModule(false, false, 0f, 0f);
             wallRun.UpdateModule(false, false, 0f);
         }
         else if (player.slider.IsSliding)
         {
-            sprint.UpdateModule(0f, 0f);
+            sprint.UpdateModule(false, false, 0f, 0f);
             wallRun.UpdateModule(false, false, 0f);
         }
         else if (player.wallRunner.IsWallRunning)
         {
-            sprint.UpdateModule(0f, 0f);
+            sprint.UpdateModule(false, false, 0f, 0f);
             wallRun.UpdateModule(true, player.wallRunner.IsWallRight, speedRatio);
         }
         else
         {
-            sprint.UpdateModule(speedRatio, currentSpeed);
+            // 땅에 있을 때의 비율(groundedRatio)을 넘겨줌
+            bool isSprinting = player.InputProv.DashHeld && currentSpeed > player.movement.walkSpeed;
+            bool isWalking = player.movement.IsGrounded && currentSpeed > 0.1f && !isSprinting;
+            bool isRunning = player.movement.IsGrounded && isSprinting;
+            sprint.UpdateModule(isWalking, isRunning, currentSpeed, player.movement.runMaxSpeed);
             wallRun.UpdateModule(false, false, 0f);
         }
 
@@ -101,9 +109,10 @@ public class CameraJuiceController : MonoBehaviour
         Vector3 totalPosOffset = sprint.PosOffset + wallRun.PosOffset + slide.PosOffset + impact.PosOffset;
         targetCamera.transform.localPosition = _originalLocalPos + totalPosOffset;
 
-        // 회전: 모든 모듈의 RotOffset(Euler)을 단순 합산하여 원본 회전에 곱함
+        // 회전: 액션 회전(360도 플립, 하강 숙임 등) + 주스 회전(헤드밥, 월런, 슬라이드) 를 단일 지점에서 합산
+        Quaternion actionRot = (actionController != null) ? actionController.ActionRotation : Quaternion.identity;
         Vector3 totalRotOffset = sprint.RotOffset + wallRun.RotOffset + slide.RotOffset + impact.RotOffset;
-        targetCamera.transform.localRotation = _originalLocalRot * Quaternion.Euler(totalRotOffset);
+        targetCamera.transform.localRotation = _originalLocalRot * actionRot * Quaternion.Euler(totalRotOffset);
 
         // FOV: 가장 높은 FovOverride를 찾은 후, Impact 펄스 오프셋을 덧붙임
         float maxFov = Mathf.Max(sprint.FovOverride, wallRun.FovOverride, slide.FovOverride);

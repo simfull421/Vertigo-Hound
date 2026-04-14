@@ -496,14 +496,16 @@ MonoBehaviour:
   baseFOV: 90
   postProcessingVolume: {fileID: 832575518}
   player: {fileID: 1392106686}
+  actionController: {fileID: 373363850}
   sprint:
-    baseFrequency: 12
-    maxAmplitudeX: 0.05
+    maxAmplitudeX: 0.15
     maxAmplitudeY: 0.04
-    maxTiltZ: 0.05
-    maxDipX: 0.5
-    sprintStartPitchAngle: 15
-    fovMultiplier: 1.2
+    maxTiltZ: 1.5
+    maxPitchX: 0.5
+    walkFrequency: 5
+    runFrequency: 10
+    effortLerpSpeed: 5
+    walkFOV: 90
     maxFOV: 110
   wallRun:
     wallRunTiltZ: 15

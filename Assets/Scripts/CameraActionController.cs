@@ -34,6 +34,16 @@ public class CameraActionController : MonoBehaviour
     private float actualDescentPitch = 0f; // 부드러운 Lerp를 위한 변수
     private float descentLookTimer = 0f; // 액션 종료 시점부터 시작되는 타이머
 
+    // 외부(CameraJuiceController)에서 읽어가는 액션 회전값
+    // 이 컴포넌트는 자체 transform을 더 이상 건드리지 않음
+    public Quaternion ActionRotation { get; private set; } = Quaternion.identity;
+
+    void Awake()
+    {
+        // ActionRotation 기반으로 전환했으므로 이 트랜스폼은 항등으로 고정
+        transform.localRotation = Quaternion.identity;
+    }
+
     // 최고점(Apex) 도달 예상 시간을 받아 랜덤 패턴 트리거
     public void TriggerRandomPattern(float apexTime)
     {
@@ -78,7 +88,7 @@ public class CameraActionController : MonoBehaviour
             currentDescentPitch = actualDescentPitch; // 구루기 연속성을 위해 동기화
 
             // 로컬 X축에만 숙임 값을 넣고 Y, Z축은 0f로 단단히 고정하여 다른 회전값과의 수학적 충돌(Jitter)을 원천 차단
-            transform.localRotation = Quaternion.Euler(actualDescentPitch, 0f, 0f);
+            ActionRotation = Quaternion.Euler(actualDescentPitch, 0f, 0f);
         }
 
         // 공기저항 쉐이크 트리거
@@ -192,12 +202,12 @@ public class CameraActionController : MonoBehaviour
 
             // x, y, z 각 채널별로 다이렉트 보간하여 Quaternion 계산
             Vector3 currentEuler = Vector3.LerpUnclamped(Vector3.zero, targetEuler, easeOutT);
-            transform.localRotation = Quaternion.Euler(currentEuler);
+            ActionRotation = Quaternion.Euler(currentEuler);
 
             yield return null;
         }
 
-        transform.localRotation = Quaternion.identity;
+        ActionRotation = Quaternion.identity;
         currentActionCoroutine = null;
     }
 
@@ -218,11 +228,11 @@ public class CameraActionController : MonoBehaviour
 
             float currentPitch = Mathf.Lerp(startPitch, targetPitch, easeOutT);
             // 구르기 회전값 역시 다이렉트로 X에 꽂아 넣어 짐벌 변환 과정의 충돌 여지를 막음
-            transform.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
+            ActionRotation = Quaternion.Euler(currentPitch, 0f, 0f);
             yield return null;
         }
 
-        transform.localRotation = Quaternion.identity;
+        ActionRotation = Quaternion.identity;
         currentDescentPitch = 0f;
         landingRollCoroutine = null;
     }
@@ -230,7 +240,7 @@ public class CameraActionController : MonoBehaviour
     private IEnumerator ResetRotationSmoothly(float duration)
     {
         float elapsed = 0f;
-        Quaternion startRot = transform.localRotation;
+        Quaternion startRot = ActionRotation;
         Quaternion targetRot = Quaternion.identity;
 
         while (elapsed < duration)
@@ -238,11 +248,11 @@ public class CameraActionController : MonoBehaviour
             elapsed += Time.deltaTime;
             float t = elapsed / duration;
             // Slerp을 통한 구면 선형 보간으로 가장 짧은 패스로 복귀
-            transform.localRotation = Quaternion.Slerp(startRot, targetRot, t);
+            ActionRotation = Quaternion.Slerp(startRot, targetRot, t);
             yield return null;
         }
         
-        transform.localRotation = targetRot;
+        ActionRotation = targetRot;
         currentDescentPitch = 0f;
         actualDescentPitch = 0f;
         descentLookTimer = 0f;
