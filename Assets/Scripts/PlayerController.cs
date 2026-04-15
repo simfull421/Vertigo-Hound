@@ -16,6 +16,7 @@ public class PlayerController : MonoBehaviour
     public PlayerWallRunner wallRunner = new PlayerWallRunner();
     public PlayerSlider slider = new PlayerSlider();
     public PlayerVault vault = new PlayerVault();
+    public PlayerRamp ramp = new PlayerRamp();
    
     private bool _jumpIntended;
 
@@ -34,6 +35,7 @@ public class PlayerController : MonoBehaviour
         wallRunner.Initialize(this);
         slider.Initialize(this);
         vault.Initialize(this);
+        ramp.Initialize(this);
     
     }
 
@@ -48,6 +50,7 @@ public class PlayerController : MonoBehaviour
         wallRunner.UpdateModule();
         slider.UpdateModule();
         vault.UpdateModule(); // Smart Reticle용 상시 감지 루프 작동
+        ramp.UpdateModule();
    
         if (InputProv.JumpTriggered)
         {
@@ -72,6 +75,12 @@ public class PlayerController : MonoBehaviour
         else
         {
             movement.FixedUpdateModule();
+        }
+
+        // 경사면 후처리: 걷기/슬라이딩 모듈 실행 후 경사면 물리를 덧어씌움
+        if (!vault.IsVaulting && !wallRunner.IsWallRunning)
+        {
+            ramp.FixedUpdateModule(_jumpIntended);
         }
 
         if (_jumpIntended)

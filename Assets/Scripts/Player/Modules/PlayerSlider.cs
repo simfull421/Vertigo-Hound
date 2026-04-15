@@ -77,14 +77,16 @@ public sealed class PlayerSlider
 
         if (!IsSliding)
         {
-            if (_hub.InputProv.SlideHeld && _hub.movement.IsGrounded && currentSpeed > minSpeedForSlide && !_hub.wallRunner.IsWallRunning)
+            bool speedOk = currentSpeed > minSpeedForSlide || _hub.ramp.IsOnRamp;
+            if (_hub.InputProv.SlideHeld && _hub.movement.IsGrounded && speedOk && !_hub.wallRunner.IsWallRunning)
             {
                 StartSlide();
             }
         }
         else
         {
-            if (!_hub.InputProv.SlideHeld || currentSpeed <= crouchSpeed || !_hub.movement.IsGrounded || _hub.wallRunner.IsWallRunning)
+            bool tooSlow = currentSpeed <= crouchSpeed && !_hub.ramp.IsOnRamp;
+            if (!_hub.InputProv.SlideHeld || tooSlow || !_hub.movement.IsGrounded || _hub.wallRunner.IsWallRunning)
             {
                 AttemptStopSlide();
             }
@@ -102,7 +104,11 @@ public sealed class PlayerSlider
         Vector3 slideDir = new Vector3(_hub.Rb.linearVelocity.x, 0f, _hub.Rb.linearVelocity.z).normalized;
         if (slideDir.sqrMagnitude < 0.1f) slideDir = _hub.transform.forward;
         
-        _hub.Rb.AddForce(slideDir * slideImpulse, ForceMode.Impulse);
+        // 경사면에서는 초기 Impulse 없이 순수 중력 가속만 적용 (버니합 악용 차단)
+        if (!_hub.ramp.IsOnRamp)
+        {
+            _hub.Rb.AddForce(slideDir * slideImpulse, ForceMode.Impulse);
+        }
 
         if (_hub.juiceController != null)
         {
@@ -138,10 +144,15 @@ public sealed class PlayerSlider
 
     private void SlideMovement()
     {
+        // 경사면 슬라이딩은 PlayerRamp.ApplySlidingMode()가 전담
+        if (_hub.ramp.IsOnRamp) return;
+
         Vector2 moveInput = _hub.InputProv.MoveInput;
         Vector3 currentXZVelocity = new Vector3(_hub.Rb.linearVelocity.x, 0f, _hub.Rb.linearVelocity.z);
         
-        Vector3 newXZVelocity = Vector3.MoveTowards(currentXZVelocity, Vector3.zero, slideDragAccumulation * Time.fixedDeltaTime);
+        // Grace Period: 경사→평지 전이 직후 드래그를 줄여 모멘텀 보존
+        float effectiveDrag = slideDragAccumulation * _hub.ramp.GraceDragMultiplier;
+        Vector3 newXZVelocity = Vector3.MoveTowards(currentXZVelocity, Vector3.zero, effectiveDrag * Time.fixedDeltaTime);
         
         Vector3 steering = (_hub.transform.right * moveInput.x).normalized * (_hub.movement.walkSpeed * 0.3f);
         newXZVelocity += steering * Time.fixedDeltaTime;

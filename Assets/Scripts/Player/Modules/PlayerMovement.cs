@@ -63,7 +63,10 @@ public sealed class PlayerMovement
 
     public void FixedUpdateModule()
     {
-        _hub.Rb.useGravity = true;
+        // 경사면에서는 PlayerRamp가 중력을 관리하므로 여기서는 비경사면만 켬
+        if (!_hub.ramp.IsOnRamp)
+            _hub.Rb.useGravity = true;
+
         MovePlayer();
 
         // 1. 무중력 탈출 (Heavy Jump) 로직
@@ -118,6 +121,7 @@ public sealed class PlayerMovement
         bool isMoving = moveInput.sqrMagnitude > 0.01f;
 
         float currentTargetSpeed = walkSpeed;
+        currentTargetSpeed *= _hub.ramp.GetWalkSpeedMultiplier();
 
         if (_hub.InputProv.DashHeld && isMoving)
         {
