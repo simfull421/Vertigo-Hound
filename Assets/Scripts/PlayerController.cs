@@ -56,6 +56,7 @@ public class PlayerController : MonoBehaviour
         {
             _jumpIntended = true;
         }
+
     }
 
     void FixedUpdate()

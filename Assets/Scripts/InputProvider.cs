@@ -8,6 +8,7 @@ public interface IInputProvider
     bool JumpTriggered { get; }
     bool DashHeld { get; }
     bool SlideHeld { get; }
+    bool AimHeld { get; }
     void Enable();
     void Disable();
 }
@@ -19,6 +20,7 @@ public class StandardInputProvider : IInputProvider
     private InputAction jumpAction;
     private InputAction dashAction;
     private InputAction slideAction;
+    private InputAction aimAction;
 
     public Vector2 MoveInput => moveAction.ReadValue<Vector2>();
     public Vector2 LookInput => lookAction.ReadValue<Vector2>();
@@ -27,6 +29,7 @@ public class StandardInputProvider : IInputProvider
     public bool JumpTriggered => jumpAction.WasPressedThisFrame();
     public bool DashHeld => dashAction.IsPressed();
     public bool SlideHeld => slideAction.IsPressed();
+    public bool AimHeld => aimAction.IsPressed();
 
     public StandardInputProvider()
     {
@@ -49,6 +52,9 @@ public class StandardInputProvider : IInputProvider
 
         slideAction = new InputAction("Slide", binding: "<Gamepad>/buttonEast");
         slideAction.AddBinding("<Keyboard>/leftCtrl");
+
+        aimAction = new InputAction("Aim", binding: "<Gamepad>/leftTrigger");
+        aimAction.AddBinding("<Mouse>/rightButton");
     }
 
     public void Enable()
@@ -58,6 +64,7 @@ public class StandardInputProvider : IInputProvider
         jumpAction.Enable();
         dashAction.Enable();
         slideAction.Enable();
+        aimAction.Enable();
     }
 
     public void Disable()
@@ -67,5 +74,6 @@ public class StandardInputProvider : IInputProvider
         jumpAction.Disable();
         dashAction.Disable();
         slideAction.Disable();
+        aimAction.Disable();
     }
 }

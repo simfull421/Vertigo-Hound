@@ -24,6 +24,15 @@ public sealed class JuiceImpact
     public float burstFOV = 115f;
     public AnimationCurve fovCurve;
 
+    [Header("Advanced Parkour Juice")]
+    public float slideJumpPunchPitch = -8f; // 고개를 뒤로 확 젖힘 (Up)
+    public float slideJumpPunchFOV = 15f;
+    public float slideJumpPunchDuration = 0.4f;
+    
+    public float activeLandingDipPitch = 45f; // 앞으로 고개를 숙임 (Down)
+    public float activeLandingFOV = 10f;
+    public float activeLandingDuration = 0.6f;
+
     public Vector3 PosOffset { get; private set; }
     public Vector3 RotOffset { get; private set; }
     public float FovOffset { get; private set; }
@@ -31,6 +40,7 @@ public sealed class JuiceImpact
     private Coroutine _vaultJuiceCoroutine;
     private Coroutine _landingDropCoroutine;
     private Coroutine _pulseCoroutine;
+    private Coroutine _parkourJuiceCoroutine;
 
     private CameraJuiceController _hub;
     
@@ -192,5 +202,77 @@ public sealed class JuiceImpact
         FovOffset = 0f;
         if (_motionBlur != null) _motionBlur.intensity.value = 0f;
         if (_lensDistortion != null) _lensDistortion.intensity.value = 0f;
+    }
+
+    // ============================================
+    // 고급 파쿠르용 연출 (Slide Jump Punch & Active Landing)
+    // ============================================
+
+    public void TriggerSlideJumpPunch()
+    {
+        if (_parkourJuiceCoroutine != null) _hub.StopCoroutine(_parkourJuiceCoroutine);
+        _parkourJuiceCoroutine = _hub.StartCoroutine(ParkourJuiceRoutine(slideJumpPunchPitch, slideJumpPunchFOV, slideJumpPunchDuration, true));
+    }
+
+    public void TriggerActiveLandingRoll()
+    {
+        if (_parkourJuiceCoroutine != null) _hub.StopCoroutine(_parkourJuiceCoroutine);
+        _parkourJuiceCoroutine = _hub.StartCoroutine(ParkourJuiceRoutine(activeLandingDipPitch, activeLandingFOV, activeLandingDuration, false));
+    }
+
+    private IEnumerator ParkourJuiceRoutine(float targetPitch, float targetFOV, float duration, bool isPunch)
+    {
+        float elapsed = 0f;
+        
+        // Punch는 초반에 빠르게 튀고 천천히 복구 (EaseOut)
+        // Landing은 부드럽게 숙였다가 부드럽게 복구 (Sine)
+        
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = elapsed / duration;
+            
+            float weight;
+            if (isPunch)
+            {
+                // 빠른 Attack, 느린 Decay
+                weight = t < 0.2f ? (t / 0.2f) : (1f - (t - 0.2f) / 0.8f);
+                weight = weight * weight * (3f - 2f * weight); // smooth
+            }
+            else
+            {
+                // 1회의 Sine 파동
+                weight = Mathf.Sin(t * Mathf.PI);
+            }
+
+            RotOffset = new Vector3(Mathf.Lerp(0f, targetPitch, weight), 0f, 0f);
+            FovOffset = Mathf.Lerp(0f, targetFOV, weight);
+
+            // Active Landing일 때만 미세한 흔들림(Shake) 추가
+            if (!isPunch)
+            {
+                float shakeForce = weight * 1.5f;
+                float rx = (UnityEngine.Random.value - 0.5f) * shakeForce;
+                float ry = (UnityEngine.Random.value - 0.5f) * shakeForce;
+                float rz = (UnityEngine.Random.value - 0.5f) * shakeForce * 2f;
+                RotOffset += new Vector3(rx, ry, rz);
+                
+                if (_motionBlur != null) _motionBlur.intensity.value = Mathf.Lerp(0f, 0.5f, weight);
+            }
+            else
+            {
+                // Punch 일 때는 스피드감을 위해 렌즈 왜곡
+                if (_lensDistortion != null) _lensDistortion.intensity.value = Mathf.Lerp(0f, -0.4f, weight);
+            }
+
+            yield return null;
+        }
+
+        RotOffset = Vector3.zero;
+        FovOffset = 0f;
+        if (_motionBlur != null) _motionBlur.intensity.value = 0f;
+        if (_lensDistortion != null) _lensDistortion.intensity.value = 0f;
+        
+        _parkourJuiceCoroutine = null;
     }
 }

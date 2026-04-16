@@ -19,6 +19,7 @@ public class CameraJuiceController : MonoBehaviour
     public JuiceWallRun wallRun = new JuiceWallRun();
     public JuiceSlide slide = new JuiceSlide();
     public JuiceImpact impact = new JuiceImpact();
+    public JuiceStrafeTilt strafeTilt = new JuiceStrafeTilt();
 
     private Vector3 _originalLocalPos;
     private Quaternion _originalLocalRot;
@@ -36,6 +37,7 @@ public class CameraJuiceController : MonoBehaviour
         wallRun.Initialize(this);
         slide.Initialize(this);
         impact.Initialize(this);
+   
     }
 
     // ============================================
@@ -54,6 +56,9 @@ public class CameraJuiceController : MonoBehaviour
     
     // 벽타기 시 펄스 연출
     public void TriggerWallAttachJuice(bool isWallRight) => impact.TriggerPulsingEffect(0.15f);
+
+    public void TriggerSlideJumpPunch() => impact.TriggerSlideJumpPunch();
+    public void TriggerActiveLandingRoll() => impact.TriggerActiveLandingRoll();
 
     public void InterruptPulse() => impact.InterruptPulse();
 
@@ -103,6 +108,11 @@ public class CameraJuiceController : MonoBehaviour
         slide.UpdateModule();
         impact.UpdateModule();
 
+        // 1. 모듈 업데이트 (LateUpdate 내부)
+        // 벽 타기나 볼팅(오버라이드 액션) 중이 아니면 틸트 활성화
+        bool isStrafeTiltActive = !player.wallRunner.IsWallRunning && !player.vault.IsVaulting; 
+        strafeTilt.UpdateModule(player.InputProv.MoveInput.x, isStrafeTiltActive);
+
         // ── Step 3: 단순 합산 & 다이렉트 대입 (Double Lerp 절대 금지) ──
 
         // 위치: 모든 모듈의 PosOffset을 단순 합산하여 원본에 더함
@@ -111,7 +121,7 @@ public class CameraJuiceController : MonoBehaviour
 
         // 회전: 액션 회전(360도 플립, 하강 숙임 등) + 주스 회전(헤드밥, 월런, 슬라이드) 를 단일 지점에서 합산
         Quaternion actionRot = (actionController != null) ? actionController.ActionRotation : Quaternion.identity;
-        Vector3 totalRotOffset = sprint.RotOffset + wallRun.RotOffset + slide.RotOffset + impact.RotOffset;
+        Vector3 totalRotOffset = sprint.RotOffset + wallRun.RotOffset + slide.RotOffset + impact.RotOffset + strafeTilt.RotOffset;
         targetCamera.transform.localRotation = _originalLocalRot * actionRot * Quaternion.Euler(totalRotOffset);
 
         // FOV: 가장 높은 FovOverride를 찾은 후, Impact 펄스 오프셋을 덧붙임

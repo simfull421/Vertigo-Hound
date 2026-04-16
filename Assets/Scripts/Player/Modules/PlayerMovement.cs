@@ -31,6 +31,7 @@ public sealed class PlayerMovement
     public Vector3 GroundNormal { get; private set; } = Vector3.up;
     public float CurrentRunTime { get; private set; }
     public float CurrentAirTime { get; private set; }
+    public float HighestY { get; private set; }
 
     private PlayerController _hub;
     private bool _wasGrounded;
@@ -50,10 +51,18 @@ public sealed class PlayerMovement
         {
             CurrentAirTime += Time.deltaTime;
             CheckDescentState();
+            
+            // 공중일 때 HighestY 최고점 갱신
+            if (_hub.transform.position.y > HighestY)
+            {
+                HighestY = _hub.transform.position.y;
+            }
         }
         else
         {
             CurrentAirTime = 0f;
+            HighestY = _hub.transform.position.y; // 바닥일 때는 현재 높이로 동기화
+            
             if (_hub.cameraActionController != null)
             {
                 _hub.cameraActionController.ResetDescentPitch();
@@ -194,21 +203,45 @@ public sealed class PlayerMovement
 
     private void OnLanded()
     {
-        if (_hub.cameraActionController != null)
+        float fallDistance = HighestY - _hub.transform.position.y;
+        
+        bool isActiveLanding = fallDistance >= 5f && _hub.InputProv.SlideHeld;
+
+        if (isActiveLanding)
         {
-            if (CurrentAirTime >= minAirTimeForRoll)
+            // 낙법 (Active Landing) 성공 - 낙뎀 무효화 및 Head Dip 발동
+            if (_hub.juiceController != null)
             {
-                // 착지 롤(360도 회전) 삭제! 대신 무거운 하강(Heavy Dip)으로 깊이감을 줍니다.
-                if (_hub.juiceController != null)
-                {
-                    _hub.juiceController.TriggerLandingDrop(1.5f);
-                }
+                _hub.juiceController.TriggerActiveLandingRoll();
             }
-            else
+        }
+        else if (fallDistance >= 10f)
+        {
+            // 치명적 낙하 (낙뎀 처리 등)
+            Debug.Log($"[Player] Fall Damage taken! Distance: {fallDistance:F1}m");
+            if (_hub.juiceController != null)
+            {
+                _hub.juiceController.TriggerLandingDrop(2.0f);
+            }
+        }
+        else if (fallDistance >= 4f || CurrentAirTime >= minAirTimeForRoll)
+        {
+            // 평범한 하드 랜딩 (무거운 착지감)
+            if (_hub.juiceController != null)
+            {
+                _hub.juiceController.TriggerLandingDrop(1.5f);
+            }
+        }
+        else
+        {
+            // 가벼운 착지
+            if (_hub.cameraActionController != null)
             {
                 _hub.cameraActionController.InterruptAction();
             }
         }
+
+        HighestY = _hub.transform.position.y;
     }
 
     private void CheckDescentState()

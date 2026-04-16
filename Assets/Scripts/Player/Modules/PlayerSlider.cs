@@ -64,9 +64,9 @@ public sealed class PlayerSlider
         float g = Physics.gravity.magnitude; 
         float timeToApex = v0 / g;
 
-        if (_hub.cameraActionController != null)
+        if (_hub.juiceController != null)
         {
-             _hub.cameraActionController.TriggerRandomPattern(timeToApex);
+             _hub.juiceController.TriggerSlideJumpPunch();
         }
     }
 

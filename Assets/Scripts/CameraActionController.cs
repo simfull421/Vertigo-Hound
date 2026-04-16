@@ -44,15 +44,18 @@ public class CameraActionController : MonoBehaviour
         transform.localRotation = Quaternion.identity;
     }
 
-    // 최고점(Apex) 도달 예상 시간을 받아 랜덤 패턴 트리거
-    public void TriggerRandomPattern(float apexTime)
+    // 최고점(Apex) 도달 예상 시간을 받아 랜덤 패턴 트리거 (일반 점프 시 회전 제어)
+    public void TriggerRandomPattern(float apexTime, bool isNormalJump = true)
     {
         CameraRotationPattern selectedPattern = GetRandomPattern();
         
-        Debug.Log($"[CameraAction] Selected Pattern: {selectedPattern} / Apex Time: {apexTime:F2}s");
+        // 일반 점프면 360도 회전 등 강제 뷰 변동 연출 비활성화
+        if (isNormalJump) 
+        {
+            selectedPattern = CameraRotationPattern.None;
+        }
 
-        if (selectedPattern == CameraRotationPattern.None)
-            return;
+        Debug.Log($"[CameraAction] Selected Pattern: {selectedPattern} / Apex Time: {apexTime:F2}s");
 
         // 기존 코루틴 강제 종료
         if (currentActionCoroutine != null) StopCoroutine(currentActionCoroutine);
@@ -61,9 +64,34 @@ public class CameraActionController : MonoBehaviour
 
         descentLookTimer = 0f;
 
-        currentActionCoroutine = StartCoroutine(PerformRotation(selectedPattern, apexTime));
+        if (selectedPattern != CameraRotationPattern.None)
+        {
+            currentActionCoroutine = StartCoroutine(PerformRotation(selectedPattern, apexTime));
+        }
 
-        // 시각적(FOV, 화면 왜곡) 타격감 분리 실행 (인지 해킹 타이밍)
+        // 시각적(FOV, 화면 왜곡) 타격감 분리 실행 (인지 해킹 타이밍) -> 점프 고도감 위해 펄스는 이지 유지
+        if (juiceController != null)
+        {
+            juiceController.TriggerPulsingEffect(apexTime);
+        }
+    }
+
+    // 슬라이드 배럴롤 등 명시적인 패턴을 띄울 때 사용
+    public void TriggerSpecificPattern(float apexTime, CameraRotationPattern pattern)
+    {
+        Debug.Log($"[CameraAction] Explicit Pattern Triggered: {pattern} / Apex Time: {apexTime:F2}s");
+
+        if (currentActionCoroutine != null) StopCoroutine(currentActionCoroutine);
+        if (resetCoroutine != null) StopCoroutine(resetCoroutine);
+        if (landingRollCoroutine != null) StopCoroutine(landingRollCoroutine);
+
+        descentLookTimer = 0f;
+
+        if (pattern != CameraRotationPattern.None)
+        {
+            currentActionCoroutine = StartCoroutine(PerformRotation(pattern, apexTime));
+        }
+
         if (juiceController != null)
         {
             juiceController.TriggerPulsingEffect(apexTime);
