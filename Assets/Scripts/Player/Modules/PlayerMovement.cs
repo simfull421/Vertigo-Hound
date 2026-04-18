@@ -147,8 +147,8 @@ public sealed class PlayerMovement
             }
         }
 
-        // 느릿한 쭈그려 걷기 페널티 (슬라이드 발동 실패 스팸 벌칙). 이 페널티는 허브/슬라이더 상태를 물어보고 결정합니다.
-        if (_hub.InputProv.SlideHeld && !_hub.slider.IsSliding)
+        // 앉기(Crouch) 물리 연산: PlayerSlider가 IsCrouching 상태일 때 속도 제한 적용
+        if (_hub.slider.IsCrouching)
         {
             currentTargetSpeed = _hub.slider.crouchSpeed;
             CurrentRunTime = 0f;

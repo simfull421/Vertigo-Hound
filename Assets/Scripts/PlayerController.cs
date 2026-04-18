@@ -17,6 +17,8 @@ public class PlayerController : MonoBehaviour
     public PlayerSlider slider = new PlayerSlider();
     public PlayerVault vault = new PlayerVault();
     public PlayerRamp ramp = new PlayerRamp();
+    public PlayerAnimatorHandler animatorHandler = new PlayerAnimatorHandler();
+    public PlayerWallTouchIK wallTouchIK = new PlayerWallTouchIK();
    
     private bool _jumpIntended;
 
@@ -36,7 +38,8 @@ public class PlayerController : MonoBehaviour
         slider.Initialize(this);
         vault.Initialize(this);
         ramp.Initialize(this);
-    
+        animatorHandler.Initialize(this);
+        wallTouchIK.Initialize(this, animatorHandler.animator);
     }
 
     void OnDestroy()
@@ -51,10 +54,18 @@ public class PlayerController : MonoBehaviour
         slider.UpdateModule();
         vault.UpdateModule(); // Smart Reticle용 상시 감지 루프 작동
         ramp.UpdateModule();
+        animatorHandler.UpdateModule();
+        wallTouchIK.UpdateModule();
    
         if (InputProv.JumpTriggered)
         {
             _jumpIntended = true;
+
+            // 허공 점프 시 애니메이션 중복 발생(무한 점프) 방지
+            if (movement.IsGrounded)
+            {
+                animatorHandler.TriggerJump();
+            }
         }
 
     }

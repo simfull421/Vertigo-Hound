@@ -9,9 +9,13 @@ public sealed class PlayerSlider
     public float crouchSpeed = 3f;
     public float slideImpulse = 22f;        // 폭발적 초기 가속
     public float slideDragAccumulation = 25f; // 강한 감속 (짧고 빠르게)
+    public float slidingCooldown = 1.2f;    // 슬라이딩 재발동 방지용 쿨타임
     public float slideHeightRatio = 0.5f;
 
     public bool IsSliding { get; private set; }
+    public bool IsCrouching { get; private set; }
+
+    private float _lastSlideEndTime = -10f;
 
     private float _originalCapsuleHeight;
     private Vector3 _originalCapsuleCenter;
@@ -43,7 +47,7 @@ public sealed class PlayerSlider
 
         if (!hasCeiling)
         {
-            StopSlide(true);
+            StopSlideOrCrouch(true);
         }
         else 
         {
@@ -74,26 +78,61 @@ public sealed class PlayerSlider
     {
         Vector3 currentXZVelocity = new Vector3(_hub.Rb.linearVelocity.x, 0, _hub.Rb.linearVelocity.z);
         float currentSpeed = currentXZVelocity.magnitude;
+        bool crouchInput = _hub.InputProv.SlideHeld || _hub.InputProv.CrouchHeld;
 
-        if (!IsSliding)
+        if (!IsSliding && !IsCrouching)
         {
-            bool speedOk = currentSpeed > minSpeedForSlide || _hub.ramp.IsOnRamp;
-            if (_hub.InputProv.SlideHeld && _hub.movement.IsGrounded && speedOk && !_hub.wallRunner.IsWallRunning)
+            if (crouchInput && _hub.movement.IsGrounded && !_hub.wallRunner.IsWallRunning)
             {
-                StartSlide();
+                // 달리기 상태(가속 중)이거나 경사면일 때 슬라이딩
+                bool isJoggingOrSprinting = currentSpeed >= 6.5f && _hub.InputProv.DashHeld;
+                bool isOnRamp = _hub.ramp.IsOnRamp;
+
+                if (isJoggingOrSprinting || isOnRamp)
+                {
+                    if (Time.time >= _lastSlideEndTime + slidingCooldown)
+                    {
+                        StartSlide(currentSpeed);
+                    }
+                    else
+                    {
+                        // 쿨타임 중일 때는 슬라이드 대신 앉기로 대체
+                        StartCrouch();
+                    }
+                }
+                else
+                {
+                    StartCrouch();
+                }
             }
         }
-        else
+        else if (IsSliding)
         {
             bool tooSlow = currentSpeed <= crouchSpeed && !_hub.ramp.IsOnRamp;
-            if (!_hub.InputProv.SlideHeld || tooSlow || !_hub.movement.IsGrounded || _hub.wallRunner.IsWallRunning)
+            
+            if (!crouchInput || !_hub.movement.IsGrounded || _hub.wallRunner.IsWallRunning)
             {
-                AttemptStopSlide();
+                AttemptStopCrouchOrSlide();
             }
+            else if (tooSlow)
+            {
+                // 속도가 떨어지면 슬라이딩에서 일반 앉기(Crouch) 상태로 전환
+                IsSliding = false;
+                IsCrouching = true; 
+            }
+        }
+        else if (IsCrouching)
+        {
+            if (!crouchInput || !_hub.movement.IsGrounded || _hub.wallRunner.IsWallRunning)
+            {
+                AttemptStopCrouchOrSlide();
+            }
+            // 앉아 있다가 갑자기 Dash를 눌러도 속도가 안나오므로 굳이 슬라이드로 즉시 안 바꿈. 
+            // 일어서고 나서 다시 뛰게 하는 것이 자연스러움.
         }
     }
 
-    private void StartSlide()
+    private void StartSlide(float entrySpeed)
     {
         IsSliding = true;
         
@@ -107,7 +146,13 @@ public sealed class PlayerSlider
         // 경사면에서는 초기 Impulse 없이 순수 중력 가속만 적용 (버니합 악용 차단)
         if (!_hub.ramp.IsOnRamp)
         {
-            _hub.Rb.AddForce(slideDir * slideImpulse, ForceMode.Impulse);
+            // 속도 비례 슬라이딩 추진력: 최고 달리기 속도(18.0)를 기준으로 비율 계산
+            float speedRatio = Mathf.Clamp01(entrySpeed / _hub.movement.runMaxSpeed);
+            // 걷기 속도쯤엔 Base Impulse의 절반(0.5) ~ 최고속도일 땐 1.0배
+            float proportionalImpulse = slideImpulse * Mathf.Lerp(0.4f, 1.0f, speedRatio);
+            
+            // 한 번(Impulse)만 부드럽게 밀어 넣음
+            _hub.Rb.AddForce(slideDir * proportionalImpulse, ForceMode.Impulse);
         }
 
         if (_hub.juiceController != null)
@@ -116,7 +161,18 @@ public sealed class PlayerSlider
         }
     }
 
-    private void AttemptStopSlide()
+    private void StartCrouch()
+    {
+        IsCrouching = true;
+        
+        _hub.Capsule.height = _originalCapsuleHeight * slideHeightRatio;
+        float dipAmount = _originalCapsuleHeight * (1f - slideHeightRatio) / 2f;
+        _hub.Capsule.center = new Vector3(_originalCapsuleCenter.x, _originalCapsuleCenter.y - dipAmount, _originalCapsuleCenter.z);
+
+        // 앉기는 Impulse 부여나 이펙트가 필요 없이 캡슐만 축소함.
+    }
+
+    private void AttemptStopCrouchOrSlide()
     {
         float checkDist = _originalCapsuleHeight - _hub.Capsule.height;
         Vector3 bottom = _hub.Capsule.bounds.center - new Vector3(0, _hub.Capsule.bounds.extents.y, 0);
@@ -127,16 +183,25 @@ public sealed class PlayerSlider
             return;
         }
 
-        StopSlide(false);
+        StopSlideOrCrouch(false);
     }
 
-    public void StopSlide(bool isJumpHop)
+    public void StopSlideOrCrouch(bool isJumpHop)
     {
+        bool wasSliding = IsSliding;
+
         IsSliding = false;
+        IsCrouching = false;
+        
+        if (wasSliding)
+        {
+            _lastSlideEndTime = Time.time;
+        }
+
         _hub.Capsule.height = _originalCapsuleHeight;
         _hub.Capsule.center = _originalCapsuleCenter;
 
-        if (_hub.juiceController != null)
+        if (wasSliding && _hub.juiceController != null)
         {
             _hub.juiceController.TriggerSlideEnd(isJumpHop);
         }

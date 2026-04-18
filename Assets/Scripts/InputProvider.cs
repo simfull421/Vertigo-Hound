@@ -8,7 +8,12 @@ public interface IInputProvider
     bool JumpTriggered { get; }
     bool DashHeld { get; }
     bool SlideHeld { get; }
+    bool CrouchHeld { get; }
     bool AimHeld { get; }
+    bool FireTriggered { get; }
+    bool ReloadTriggered { get; }
+    bool Weapon1Triggered { get; }
+    bool Weapon2Triggered { get; }
     void Enable();
     void Disable();
 }
@@ -20,7 +25,12 @@ public class StandardInputProvider : IInputProvider
     private InputAction jumpAction;
     private InputAction dashAction;
     private InputAction slideAction;
+    private InputAction crouchAction;
     private InputAction aimAction;
+    private InputAction fireAction;
+    private InputAction reloadAction;
+    private InputAction weapon1Action;
+    private InputAction weapon2Action;
 
     public Vector2 MoveInput => moveAction.ReadValue<Vector2>();
     public Vector2 LookInput => lookAction.ReadValue<Vector2>();
@@ -29,7 +39,12 @@ public class StandardInputProvider : IInputProvider
     public bool JumpTriggered => jumpAction.WasPressedThisFrame();
     public bool DashHeld => dashAction.IsPressed();
     public bool SlideHeld => slideAction.IsPressed();
+    public bool CrouchHeld => crouchAction.IsPressed();
     public bool AimHeld => aimAction.IsPressed();
+    public bool FireTriggered => fireAction.WasPressedThisFrame();
+    public bool ReloadTriggered => reloadAction.WasPressedThisFrame();
+    public bool Weapon1Triggered => weapon1Action.WasPressedThisFrame();
+    public bool Weapon2Triggered => weapon2Action.WasPressedThisFrame();
 
     public StandardInputProvider()
     {
@@ -53,8 +68,19 @@ public class StandardInputProvider : IInputProvider
         slideAction = new InputAction("Slide", binding: "<Gamepad>/buttonEast");
         slideAction.AddBinding("<Keyboard>/leftCtrl");
 
+        crouchAction = new InputAction("Crouch", binding: "<Keyboard>/c");
+
         aimAction = new InputAction("Aim", binding: "<Gamepad>/leftTrigger");
         aimAction.AddBinding("<Mouse>/rightButton");
+
+        fireAction = new InputAction("Fire", binding: "<Gamepad>/rightTrigger");
+        fireAction.AddBinding("<Mouse>/leftButton");
+
+        reloadAction = new InputAction("Reload", binding: "<Gamepad>/buttonWest");
+        reloadAction.AddBinding("<Keyboard>/r");
+
+        weapon1Action = new InputAction("Weapon1", binding: "<Keyboard>/1");
+        weapon2Action = new InputAction("Weapon2", binding: "<Keyboard>/2");
     }
 
     public void Enable()
@@ -64,7 +90,12 @@ public class StandardInputProvider : IInputProvider
         jumpAction.Enable();
         dashAction.Enable();
         slideAction.Enable();
+        crouchAction.Enable();
         aimAction.Enable();
+        fireAction.Enable();
+        reloadAction.Enable();
+        weapon1Action.Enable();
+        weapon2Action.Enable();
     }
 
     public void Disable()
@@ -74,6 +105,11 @@ public class StandardInputProvider : IInputProvider
         jumpAction.Disable();
         dashAction.Disable();
         slideAction.Disable();
+        crouchAction.Disable();
         aimAction.Disable();
+        fireAction.Disable();
+        reloadAction.Disable();
+        weapon1Action.Disable();
+        weapon2Action.Disable();
     }
 }
