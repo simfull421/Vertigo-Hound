@@ -16,6 +16,7 @@ public sealed class PlayerVault
     
     public bool IsVaulting { get; private set; }
     public bool CanVault { get; private set; }
+    public Vector3 VaultEdgePos { get; private set; }
     
     private Vector3 _cachedVaultTarget;
 
@@ -45,6 +46,9 @@ public sealed class PlayerVault
                 if (Vector3.Angle(Vector3.up, topHit.normal) <= 45f)
                 {
                     CanVault = true;
+                    // IK가 짚을 모서리 끝단 좌표를 저장합니다.
+                    VaultEdgePos = topHit.point; 
+                    
                     // 착지 지점 오프셋(Clearance Offset): 물체의 끝을 완전히 가로지르도록 정면(forward) 방향으로 여유분 0.6f 추가
                     _cachedVaultTarget = topHit.point + forward * 0.6f + Vector3.up * (_hub.Capsule.bounds.extents.y + 0.1f);
                 }
@@ -76,6 +80,11 @@ public sealed class PlayerVault
         Vector3 startPos = _hub.transform.position;
         float elapsed = 0f;
 
+        // (루프 진입 전) 현재 카메라의 로컬 X회전값(위아래 고개 숙임) 저장 및 원래 로컬 포지션 저장
+        Transform camTransform = Camera.main.transform;
+        float originalPitch = camTransform.localEulerAngles.x;
+        Vector3 originalCamLocalPos = camTransform.localPosition;
+
         while (elapsed < vaultDuration)
         {
             elapsed += Time.fixedDeltaTime;
@@ -89,8 +98,24 @@ public sealed class PlayerVault
             currentPos.y += Mathf.Sin(t * Mathf.PI) * 0.7f;
 
             _hub.Rb.MovePosition(currentPos);
+
+            // [카메라 헤드 딥(Head Dip) 로직 추가]
+            // Sin 그래프를 이용해 0 -> 1 -> 0 으로 값이 변하게 함
+            float dipAmount = Mathf.Sin(t * Mathf.PI); 
+            
+            // 최대 15도 정도 아래를 쳐다보게 만듦 (수치는 취향껏 조절)
+            float targetPitch = originalPitch + (15f * dipAmount); 
+            
+            // 카메라 로컬 X축(Pitch)에 적용 및 클리핑 방지를 위해 가슴 밖으로 살짝 내밂(+0.1f Y, +0.2f Z)
+            camTransform.localEulerAngles = new Vector3(targetPitch, camTransform.localEulerAngles.y, camTransform.localEulerAngles.z);
+            camTransform.localPosition = new Vector3(originalCamLocalPos.x, originalCamLocalPos.y + (0.1f * dipAmount), originalCamLocalPos.z + (0.2f * dipAmount));
+
             yield return new WaitForFixedUpdate();
         }
+
+        // 루프 종료 후 카메라 앵글 및 위치 원상복구
+        camTransform.localEulerAngles = new Vector3(originalPitch, camTransform.localEulerAngles.y, camTransform.localEulerAngles.z);
+        camTransform.localPosition = originalCamLocalPos;
 
         _hub.transform.position = targetPos;
         _hub.Rb.useGravity = true;

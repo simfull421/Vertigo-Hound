@@ -3,8 +3,14 @@ using UnityEngine.Rendering;
 
 public class CameraJuiceController : MonoBehaviour
 {
+    [Header("Camera Transforms (피벗 분리 핵심)")]
+    [Tooltip("상하 회전이 없는 최상위 더미 피벗 (위치 이동 전용)")]
+    public Transform positionPivot; 
+    
+    [Tooltip("실제 화면을 비추는 메인 카메라 (회전 및 FOV 전용)")]
+    public Camera mainCamera; 
+
     [Header("Camera & FOV")]
-    public Camera targetCamera;
     public float baseFOV = 90f;
 
     [Header("URP Post Processing")]
@@ -26,57 +32,60 @@ public class CameraJuiceController : MonoBehaviour
 
     void Awake()
     {
-        if (targetCamera != null)
+        // 1. 위치(Position)의 기준점은 Pivot에서 가져옵니다.
+        if (positionPivot != null)
         {
-            _originalLocalPos = targetCamera.transform.localPosition;
-            _originalLocalRot = targetCamera.transform.localRotation;
-            targetCamera.fieldOfView = baseFOV;
+            _originalLocalPos = positionPivot.localPosition;
+        }
+
+        // 2. 회전(Rotation)과 FOV의 기준점은 MainCamera에서 가져옵니다.
+        if (mainCamera != null)
+        {
+            _originalLocalRot = mainCamera.transform.localRotation;
+            mainCamera.fieldOfView = baseFOV;
         }
 
         sprint.Initialize(this);
         wallRun.Initialize(this);
         slide.Initialize(this);
         impact.Initialize(this);
-   
     }
 
     // ============================================
-    // 타 모듈(PlayerController)을 위한 공용 Hook API
-    // (이벤트성 트리거만 남김 — 매 프레임 업데이트는 LateUpdate에서 직접 처리)
+    // (중략) Trigger 메서드들은 기존과 동일하게 유지하셔도 됩니다.
     // ============================================
 
     public void TriggerSlideStart(float dipAmount) => slide.TriggerSlideStart(dipAmount);
     public void TriggerSlideEnd(bool isJumpHop = false) => slide.TriggerSlideEnd(isJumpHop);
-
-    // 타격 연출
     public void TriggerVaultJuice(float duration) => impact.TriggerVaultJuice(duration);
     public void TriggerLandingDrop(float intensity = 1f) => impact.TriggerLandingDrop(intensity);
     public void TriggerPulsingEffect(float duration) => impact.TriggerPulsingEffect(duration);
     public void UpdateDescentShake(float airTime, float yVel) => impact.UpdateDescentShake(airTime, yVel);
-    
-    // 벽타기 시 펄스 연출
     public void TriggerWallAttachJuice(bool isWallRight) => impact.TriggerPulsingEffect(0.15f);
-
     public void TriggerSlideJumpPunch() => impact.TriggerSlideJumpPunch();
     public void TriggerActiveLandingRoll() => impact.TriggerActiveLandingRoll();
-
     public void InterruptPulse() => impact.InterruptPulse();
 
+    /// <summary>
+    /// 플레이어 발소리 이벤트를 스프린트(Headbob) 모듈로 전달합니다.
+    /// </summary>
+    public void OnFootstepTriggered(string side)
+    {
+        sprint.TriggerStep(side);
+    }
+
     // ============================================
-    // 핵심: 모든 연산을 LateUpdate 한 곳에서 수행
-    // FixedUpdate 물리 연산이 완전히 끝난 뒤 실행되므로 Jittering 원천 차단
+    // 핵심: LateUpdate 구조 분리 적용
     // ============================================
 
     void LateUpdate()
     {
-        if (targetCamera == null || player == null) return;
+        if (mainCamera == null || positionPivot == null || player == null) return;
 
         // ── Step 1: 물리 상태 읽기 ──
         Rigidbody rb = player.Rb;
         float currentSpeed = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z).magnitude;
         float speedRatio = Mathf.Clamp01(currentSpeed / player.movement.runMaxSpeed);
-        
-        // 공중에 떠있으면 헤드밥 비율을 강제로 0으로 만듦 (공중 꿀렁임 원천 차단)
         float groundedRatio = player.movement.IsGrounded ? speedRatio : 0f;
 
         // ── Step 2: 각 모듈 업데이트 ──
@@ -97,7 +106,6 @@ public class CameraJuiceController : MonoBehaviour
         }
         else
         {
-            // 땅에 있을 때의 비율(groundedRatio)을 넘겨줌
             bool isSprinting = player.InputProv.DashHeld && currentSpeed > player.movement.walkSpeed;
             bool isWalking = player.movement.IsGrounded && currentSpeed > 0.1f && !isSprinting;
             bool isRunning = player.movement.IsGrounded && isSprinting;
@@ -108,26 +116,25 @@ public class CameraJuiceController : MonoBehaviour
         slide.UpdateModule();
         impact.UpdateModule();
 
-        // 1. 모듈 업데이트 (LateUpdate 내부)
-        // 벽 타기나 볼팅(오버라이드 액션) 중이 아니면 틸트 활성화
         bool isStrafeTiltActive = !player.wallRunner.IsWallRunning && !player.vault.IsVaulting; 
         strafeTilt.UpdateModule(player.InputProv.MoveInput.x, isStrafeTiltActive);
 
-        // ── Step 3: 단순 합산 & 다이렉트 대입 (Double Lerp 절대 금지) ──
 
-        // 위치: 모든 모듈의 PosOffset을 단순 합산하여 원본에 더함
+        // ── Step 3: 완벽하게 분리된 다이렉트 대입 ──
+
+        // [위치 적용]: 회전이 없는 더미 피벗(positionPivot)에만 쥬스 오프셋 적용!
+        // 마우스를 어디로 돌리든 무조건 월드 공간의 수직 아래(-Y)로 깔끔하게 떨어짐
         Vector3 totalPosOffset = sprint.PosOffset + wallRun.PosOffset + slide.PosOffset + impact.PosOffset;
-        targetCamera.transform.localPosition = _originalLocalPos + totalPosOffset;
+        positionPivot.localPosition = _originalLocalPos + totalPosOffset;
 
-        // 회전: 액션 회전(360도 플립, 하강 숙임 등) + 주스 회전(헤드밥, 월런, 슬라이드) 를 단일 지점에서 합산
+        // [회전 적용]: 메인 카메라(mainCamera) 자체에 회전 쥬스 적용!
         Quaternion actionRot = (actionController != null) ? actionController.ActionRotation : Quaternion.identity;
         Vector3 totalRotOffset = sprint.RotOffset + wallRun.RotOffset + slide.RotOffset + impact.RotOffset + strafeTilt.RotOffset;
-        targetCamera.transform.localRotation = _originalLocalRot * actionRot * Quaternion.Euler(totalRotOffset);
+        mainCamera.transform.localRotation = _originalLocalRot * actionRot * Quaternion.Euler(totalRotOffset);
 
-        // FOV: 가장 높은 FovOverride를 찾은 후, Impact 펄스 오프셋을 덧붙임
+        // [FOV 적용]
         float maxFov = Mathf.Max(sprint.FovOverride, wallRun.FovOverride, slide.FovOverride);
         if (maxFov < baseFOV) maxFov = baseFOV;
-        
-        targetCamera.fieldOfView = maxFov + impact.FovOffset;
+        mainCamera.fieldOfView = maxFov + impact.FovOffset;
     }
 }

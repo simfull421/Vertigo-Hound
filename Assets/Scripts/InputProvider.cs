@@ -14,6 +14,7 @@ public interface IInputProvider
     bool ReloadTriggered { get; }
     bool Weapon1Triggered { get; }
     bool Weapon2Triggered { get; }
+    
     void Enable();
     void Disable();
 }

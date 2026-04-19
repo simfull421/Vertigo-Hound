@@ -93,7 +93,8 @@ public sealed class JuiceImpact
             float t = Mathf.Clamp01(elapsed / tiltInTime);
             float curveT = t * t * (3f - 2f * t); // SmoothStep
 
-            PosOffset = new Vector3(0f, Mathf.Lerp(0f, vaultDipDepth, curveT), 0f);
+            // [수정] Y축으로 내려갈 때 Z축(앞)으로 0.25f 만큼 밀어넣습니다.
+            PosOffset = new Vector3(0f, Mathf.Lerp(0f, vaultDipDepth, curveT), Mathf.Lerp(0f, 0.25f, curveT));
             float currentRoll = Mathf.Lerp(0f, targetRoll, curveT);
             float currentPitch = Mathf.Lerp(0f, 5f, curveT);
             RotOffset = new Vector3(currentPitch, 0f, currentRoll);
@@ -145,7 +146,10 @@ public sealed class JuiceImpact
         {
             elapsed += Time.deltaTime;
             float t = elapsed / dropDuration;
-            PosOffset = Vector3.Lerp(Vector3.zero, Vector3.down * dropTarget, t);
+            // [수정] 수직(-Y)으로만 내려가지 말고, 내려가는 양에 비례해서 앞(+Z)으로 목을 빼줍니다.
+            // Z축으로 0.4f 정도 앞으로 밀어주면 가슴팍을 뚫는 현상이 사라집니다.
+            Vector3 targetDropPos = new Vector3(0f, -dropTarget, dropTarget * 0.4f); 
+            PosOffset = Vector3.Lerp(Vector3.zero, targetDropPos, t);
             yield return null;
         }
 
