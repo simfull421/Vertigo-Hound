@@ -29,31 +29,25 @@ public class CameraJuiceController : MonoBehaviour
 
     private Vector3 _originalLocalPos;
     private Quaternion _originalLocalRot;
-
+    
     void Awake()
     {
-        // 1. 위치(Position)의 기준점은 Pivot에서 가져옵니다.
         if (positionPivot != null)
         {
             _originalLocalPos = positionPivot.localPosition;
         }
 
-        // 2. 회전(Rotation)과 FOV의 기준점은 MainCamera에서 가져옵니다.
         if (mainCamera != null)
         {
             _originalLocalRot = mainCamera.transform.localRotation;
             mainCamera.fieldOfView = baseFOV;
         }
-
+            
         sprint.Initialize(this);
         wallRun.Initialize(this);
         slide.Initialize(this);
         impact.Initialize(this);
     }
-
-    // ============================================
-    // (중략) Trigger 메서드들은 기존과 동일하게 유지하셔도 됩니다.
-    // ============================================
 
     public void TriggerSlideStart(float dipAmount) => slide.TriggerSlideStart(dipAmount);
     public void TriggerSlideEnd(bool isJumpHop = false) => slide.TriggerSlideEnd(isJumpHop);
@@ -66,17 +60,10 @@ public class CameraJuiceController : MonoBehaviour
     public void TriggerActiveLandingRoll() => impact.TriggerActiveLandingRoll();
     public void InterruptPulse() => impact.InterruptPulse();
 
-    /// <summary>
-    /// 플레이어 발소리 이벤트를 스프린트(Headbob) 모듈로 전달합니다.
-    /// </summary>
     public void OnFootstepTriggered(string side)
     {
-        sprint.TriggerStep(side);
+        sprint.TriggerStep(side); 
     }
-
-    // ============================================
-    // 핵심: LateUpdate 구조 분리 적용
-    // ============================================
 
     void LateUpdate()
     {
@@ -86,15 +73,9 @@ public class CameraJuiceController : MonoBehaviour
         Rigidbody rb = player.Rb;
         float currentSpeed = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z).magnitude;
         float speedRatio = Mathf.Clamp01(currentSpeed / player.movement.runMaxSpeed);
-        float groundedRatio = player.movement.IsGrounded ? speedRatio : 0f;
 
         // ── Step 2: 각 모듈 업데이트 ──
-        if (player.vault.IsVaulting)
-        {
-            sprint.UpdateModule(false, false, 0f, 0f);
-            wallRun.UpdateModule(false, false, 0f);
-        }
-        else if (player.slider.IsSliding)
+        if (player.vault.IsVaulting || player.slider.IsSliding)
         {
             sprint.UpdateModule(false, false, 0f, 0f);
             wallRun.UpdateModule(false, false, 0f);
@@ -119,15 +100,12 @@ public class CameraJuiceController : MonoBehaviour
         bool isStrafeTiltActive = !player.wallRunner.IsWallRunning && !player.vault.IsVaulting; 
         strafeTilt.UpdateModule(player.InputProv.MoveInput.x, isStrafeTiltActive);
 
-
         // ── Step 3: 완벽하게 분리된 다이렉트 대입 ──
-
-        // [위치 적용]: 회전이 없는 더미 피벗(positionPivot)에만 쥬스 오프셋 적용!
-        // 마우스를 어디로 돌리든 무조건 월드 공간의 수직 아래(-Y)로 깔끔하게 떨어짐
+        // 수학 문서에 따라 이제 sprint.PosOffset에는 X축 진자 이동 수치도 포함되어 정상 적용됩니다.
         Vector3 totalPosOffset = sprint.PosOffset + wallRun.PosOffset + slide.PosOffset + impact.PosOffset;
         positionPivot.localPosition = _originalLocalPos + totalPosOffset;
 
-        // [회전 적용]: 메인 카메라(mainCamera) 자체에 회전 쥬스 적용!
+        // 수학 문서에 따라 sprint.RotOffset.x 에 앞숙임(Pitch) 값이 정상 반영됩니다.
         Quaternion actionRot = (actionController != null) ? actionController.ActionRotation : Quaternion.identity;
         Vector3 totalRotOffset = sprint.RotOffset + wallRun.RotOffset + slide.RotOffset + impact.RotOffset + strafeTilt.RotOffset;
         mainCamera.transform.localRotation = _originalLocalRot * actionRot * Quaternion.Euler(totalRotOffset);

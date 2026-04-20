@@ -10,11 +10,19 @@ public class PlayerController : MonoBehaviour
     [Header("Camera & Action Control")]
     public CameraActionController cameraActionController;
     public CameraJuiceController juiceController;
+    [Tooltip("발소리를 담당하는 PlayerAudioManager를 여기에 드래그 앤 드롭하세요.")]
+    public PlayerAudioManager audioManager;
 
     // [추가] 뷰모델 오브젝트 할당용 변수
     [Header("Viewmodel Settings")]
     [Tooltip("뷰모델 카메라 하위에 있는 총기/팔 오브젝트 (GunUpper)를 연결하세요.")]
     public GameObject viewmodelGun;
+    [Tooltip("뷰모델 카메라 하위에 있는 맨손 오브젝트 (RunUpper)")]
+    public GameObject runUpper;
+    [Tooltip("월드 모델(본체)에 붙은 Animator. VaultIK 등 메인 IK 시스템 전용. 뷰모델 Animator를 절대 연결하지 마세요!")]
+    public Animator worldModelAnimator;
+    /// <summary>RunUpper의 Animator 컨포넌트. Awake에서 캐싱합니다.</summary>
+    [HideInInspector] public Animator runUpperAnimator;
     [Header("Viewmodel Weapon")]
     public ViewmodelGunController gunController; // 인스펙터에서 연결
     [Header("Modules")]
@@ -45,9 +53,30 @@ public class PlayerController : MonoBehaviour
         slider.Initialize(this);
         vault.Initialize(this);
         ramp.Initialize(this);
+
+        // [순서 중요] RunUpper Animator 캐싱은 animatorHandler.Initialize보다 먼저 실행되어야 함
+        // animatorHandler.Initialize 내부에서 _hub.runUpperAnimator를 참조하기 때문
+        if (runUpper != null)
+        {
+            runUpperAnimator = runUpper.GetComponent<Animator>();
+            if (runUpperAnimator == null)
+                Debug.LogError("[PlayerController] RunUpper에 Animator 컴포넌트가 없습니다!");
+        }
+        else
+        {
+            Debug.LogError("[PlayerController] runUpper가 연결되지 않았습니다!");
+        }
+
         animatorHandler.Initialize(this);
-        wallTouchIK.Initialize(this, animatorHandler.animator);
-        vaultIK.Initialize(this, animatorHandler.animator);
+
+        // WallTouchIK: RunUpper(맨손 뷰모델)의 애니메이터로 IK 구동
+        wallTouchIK.Initialize(this, runUpperAnimator);
+
+        // VaultIK: 월드 모델의 메인 Animator 전용 (아바타 Humanoid IK 필수)
+        if (worldModelAnimator == null)
+            Debug.LogError("[PlayerController] worldModelAnimator가 연결되지 않았습니다! VaultIK가 동작하지 않습니다.");
+        vaultIK.Initialize(this, worldModelAnimator);
+
         if (gunController != null) gunController.Initialize(this);
     }
 
@@ -57,15 +86,31 @@ public class PlayerController : MonoBehaviour
     }
 
     /// <summary>
-    /// 애니메이션 이벤트 포워더로부터 발소리 신호를 수신합니다.
+    /// 애니메이션 클립의 'PlayFootstep' 이벤트로부터 신호를 직접 수신하는 본체 수신처입니다.
+    /// (애니메이터가 붙은 오브젝트에 이 메서드가 있어야 Failed to call AnimationEvent 에러가 발생하지 않습니다)
     /// </summary>
-    public void OnPlayerFootstep(string side)
+    public void PlayFootstep(string side)
     {
-        if (juiceController != null)
+        // 1단계: 애니메이션 이벤트 전파 (쥬스 시스템)
+        if (this.juiceController != null)
         {
-            juiceController.OnFootstepTriggered(side);
+            this.juiceController.OnFootstepTriggered(side);
+        }
+
+        // 2단계: 오디오 서비스 실행 (직속 할당된 오디오 매니저 사용)
+        if (this.audioManager != null)
+        {
+            float currentSpeed = (Rb != null) ? Rb.linearVelocity.magnitude : 0f;
+            this.audioManager.PlayFootstepAudio(side, currentSpeed);
+        }
+        else
+        {
+            Debug.LogWarning("[Footstep Warning] PlayerController에 PlayerAudioManager가 할당되지 않았습니다!");
         }
     }
+
+
+
 
     void Update()
     {

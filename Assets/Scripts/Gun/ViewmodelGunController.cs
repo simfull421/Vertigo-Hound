@@ -58,14 +58,31 @@ public class ViewmodelGunController : MonoBehaviour
 
     // [수정] Fire 해시는 이제 애니메이터에서 안 쓰므로 지웠습니다.
     private readonly int hashReload = Animator.StringToHash("TriggerReload");
+    
+    // [방어] gunAnim.Update(0f) 제거 대체: SetActive 이후 첫 LateUpdate에서 Idle 포즈를 재캡처합니다.
+    private bool _needsHipPoseCapture = false;
 
     public void Initialize(PlayerController hub)
     {
         _hub = hub;
         currentAmmo = maxAmmo;
+
+        // [방어] gunAnimator와 World Model animator가 같은 오브젝트를 가리키면 즉시 경고
+        if (_hub != null && gunAnimator != null && _hub.animatorHandler.animator != null)
+        {
+            if (gunAnimator == _hub.animatorHandler.animator)
+            {
+                Debug.LogError("[ViewmodelGunController] ⛔ gunAnimator와 PlayerAnimatorHandler.animator가 동일한 객체입니다!\n" +
+                               "이 상태에서는 World Model의 Walk Blend Tree가 GunUpper에 재생됩니다.\n" +
+                               "인스펙터에서 gunAnimator를 GunUpper 전용 Animator로 교체하세요.");
+            }
+        }
         
-        _hipLocalPos = weaponRoot.localPosition; 
-        _hipLocalRot = weaponRoot.localRotation;
+        // 초기 hip 포즈 캡처 (이 시점은 SetActive 직후라 T-Pose일 수 있음)
+        // _needsHipPoseCapture 플래그를 세워서 첫 LateUpdate에서 Animator가 Idle 포즈를 잡은 뒤 재캡처합니다.
+        _hipLocalPos = weaponRoot != null ? weaponRoot.localPosition : Vector3.zero;
+        _hipLocalRot = weaponRoot != null ? weaponRoot.localRotation : Quaternion.identity;
+        _needsHipPoseCapture = true; // 다음 LateUpdate에서 Idle 포즈 확정 후 재캡처
 
         if (viewmodelCamera != null) _defaultFOV = viewmodelCamera.fieldOfView;
     }
@@ -115,6 +132,15 @@ public class ViewmodelGunController : MonoBehaviour
     public void LateUpdateModule()
     {
         if (_hub == null || _hub.animatorHandler.currentWeaponType != 1) return;
+
+        // [방어] Initialize 직후(SetActive 직후)에는 Animator가 아직 T-Pose 상태일 수 있습니다.
+        // 첫 LateUpdate 진입 시점(Animator가 Idle 포즈를 확정한 뒤)에 weaponRoot 포즈를 재캡처합니다.
+        if (_needsHipPoseCapture && weaponRoot != null)
+        {
+            _hipLocalPos = weaponRoot.localPosition;
+            _hipLocalRot = weaponRoot.localRotation;
+            _needsHipPoseCapture = false;
+        }
 
         if (_isAiming)
         {

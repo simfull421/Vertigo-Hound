@@ -20,9 +20,6 @@ public sealed class PlayerSlider
     private float _originalCapsuleHeight;
     private Vector3 _originalCapsuleCenter;
 
-    private Transform _camTransform;
-    private Vector3 _originalCamLocalPos;
-
     private PlayerController _hub;
 
     public void Initialize(PlayerController hub)
@@ -30,32 +27,11 @@ public sealed class PlayerSlider
         _hub = hub;
         _originalCapsuleHeight = _hub.Capsule.height;
         _originalCapsuleCenter = _hub.Capsule.center;
-        
-        if (Camera.main != null)
-        {
-            _camTransform = Camera.main.transform;
-            _originalCamLocalPos = _camTransform.localPosition;
-        }
     }
 
     public void UpdateModule()
     {
         CheckSlide();
-
-        // [수정: 슬라이딩 카메라 모션 보간 연산] 
-        if (_camTransform != null)
-        {
-            Vector3 targetCamLocal = _originalCamLocalPos;
-            if (IsSliding || IsCrouching) 
-            {
-                // 슬라이딩/앉기 진입 시: Y축으로 낮추고 Z축으로 -0.4f 후퇴 (시차적 속도감 극대화)
-                float dropAmount = _originalCapsuleHeight * (1f - slideHeightRatio) / 2f;
-                targetCamLocal = new Vector3(_originalCamLocalPos.x, _originalCamLocalPos.y - dropAmount, _originalCamLocalPos.z - 0.4f);
-            }
-            
-            // IsSliding이 false가 되는 순간 원래 좌표로 부드럽게 원상복구됨
-            _camTransform.localPosition = Vector3.Lerp(_camTransform.localPosition, targetCamLocal, Time.deltaTime * 10f);
-        }
     }
 
     public void FixedUpdateModule()

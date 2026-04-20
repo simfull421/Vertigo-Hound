@@ -16,9 +16,9 @@ public sealed class JuiceSlide
     public Vector3 RotOffset { get; private set; }
     public float FovOverride { get; private set; }
 
-    private bool _isSlidingJuice;
     private float _currentTiltDirection; // 랜덤 좌/우 틸트 방향
     private Coroutine _standUpDipCoroutine;
+
 
     private CameraJuiceController _hub;
 
@@ -32,14 +32,11 @@ public sealed class JuiceSlide
     {
         if (_standUpDipCoroutine != null) _hub.StopCoroutine(_standUpDipCoroutine);
         
-        _isSlidingJuice = true;
         _currentTiltDirection = UnityEngine.Random.value > 0.5f ? 1f : -1f; // 랜덤 방향
     }
 
     public void TriggerSlideEnd(bool isJumpHop = false)
     {
-        _isSlidingJuice = false;
-        
         if (_standUpDipCoroutine != null) _hub.StopCoroutine(_standUpDipCoroutine);
         _standUpDipCoroutine = _hub.StartCoroutine(StandUpDipRoutine(isJumpHop));
     }
@@ -52,21 +49,33 @@ public sealed class JuiceSlide
         bool isSliding = _hub.player.slider.IsSliding;
         bool isCrouching = _hub.player.slider.IsCrouching;
 
-        // ── 1. 위치 오프셋 (PosOffset) 중앙 제어 ──
+        // ── 1. 위치 오프셋 (PosOffset) — 캡슐 하강량 기반 동적 계산 ──────────────
+        // positionPivot은 Pitch 회전이 전혀 없는 더미 노드이므로,
+        // localPosition.y를 변경하면 카메라가 완전한 월드 수직으로만 이동함.
+        // (Camera.main.localPosition을 건드리면 Pitch에 의해 궤도 운동이 발생했음)
         Vector3 targetPos = Vector3.zero;
 
-        if (isSliding)
+        if (isSliding || isCrouching)
         {
-            // [슬라이딩 상태]: 높이를 낮추고 Z축으로 목을 빼서(0.3f) 관통 방지 및 속도감 부여
-            targetPos = new Vector3(0, -0.5f, 0.3f);
+            // 캡슐의 실제 축소 데이터에서 하강량을 역산
+            // slideHeightRatio만큼 줄어든 캡슐에서 midpoint가 내려가는 양 = dropAmount
+            float originalHeight = _hub.player.slider.slideHeightRatio > 0
+                ? _hub.player.Capsule.height / _hub.player.slider.slideHeightRatio   // 현재 줄어든 상태라면 역산
+                : _hub.player.Capsule.height;
+            // 실제로는 StartSlide에서 이미 축소됐으므로 간단히 Capsule 원본값 근사
+            // → slider 모듈이 노출한 slideHeightRatio와 원본 캡슐 높이(2.0 고정)으로 계산
+            float dropAmount = _hub.player.Capsule.height < 1.9f
+                ? (2.0f * (1f - _hub.player.slider.slideHeightRatio)) * 0.5f   // 이미 앉은 상태
+                : 0f;
+
+            if (isSliding)
+                targetPos = new Vector3(0f, -dropAmount, 0.3f);   // 슬라이딩: Z 0.3 앞 기울기
+            else
+                targetPos = new Vector3(0f, -dropAmount, 0f);     // 앉기: 순수 하강만
         }
-        else if (isCrouching)
-        {
-            targetPos = new Vector3(0, -0.43f, 0); 
-        }
-        // [일반 상태]: targetPos = Vector3.zero
 
         PosOffset = Vector3.Lerp(PosOffset, targetPos, Time.deltaTime * 12f);
+
 
 
         // ── 2. 회전 및 FOV 오프셋 (슬라이딩 전용 쥬스) ──
@@ -76,7 +85,7 @@ public sealed class JuiceSlide
 
             float lerpSpeed = Time.deltaTime * slideJuiceSpeed;
             RotOffset = Vector3.Lerp(RotOffset, targetRot, lerpSpeed);
-            FovOverride = Mathf.Lerp(FovOverride, _hub.sprint.maxFOV, lerpSpeed); 
+            FovOverride = Mathf.Lerp(FovOverride, _hub.sprint.runFov, lerpSpeed); 
         }
         else if (_standUpDipCoroutine == null)
         {
