@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7596c58caffc9fc47bbd7b7e29fbd60b, type: 3}
+  m_Name: NewFloorConfig
+  m_EditorClassIdentifier: Assembly-CSharp::FloorConfig
+  width: 5
+  height: 5
+  cellSize: 4
+  floorHeight: 3.5
+  baseSeed: 42
+  totalFloors: 10
+  emptyChance: 30
+  vaultWallHeight: 1.5
+  stairPosition: {x: 0, y: 2}
+  floorPrefab: {fileID: 7452401183896043402, guid: f42f571dbe749d841bd139d5e8904878, type: 3}
+  wallFullPrefab: {fileID: 391694252269407123, guid: 6987816538430e347a91ee60a674ca40, type: 3}
+  wallLowPrefab: {fileID: 5971349152641103536, guid: 857670124a6b27943a02b4bf53d76c66, type: 3}
+  stairPrefab: {fileID: 1771899731169711429, guid: 52f2e8d811fc9404aaed01abd022bc43, type: 3}
+  brokenWallPrefab: {fileID: 0}
+  windowPrefab: {fileID: 0}
+  roomPrefab: {fileID: 175991045951083698, guid: 268ef790c853dab4ab4b7692a5c43ca7, type: 3}
+  hallwayPrefab: {fileID: 3725876214269441680, guid: 671743ea75d0c0e479c4f6b4c9e8bdd9, type: 3}

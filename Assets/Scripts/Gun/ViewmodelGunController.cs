@@ -39,6 +39,14 @@ public class ViewmodelGunController : MonoBehaviour
     public float recoilSnappiness = 20f;  // 반동이 튀어오르는 속도 (빠를수록 타격감 증가)
     public float recoilReturnSpeed = 10f; // 원래 자리로 돌아오는 속도
 
+    [Header("Shotgun Settings")]
+    [Tooltip("한 번에 발사되는 산탄 수")]
+    public int pelletCount = 8;
+    [Tooltip("집탄율 (높을수록 널리 퍼짐)")]
+    public float spreadAngle = 0.05f;
+    [Tooltip("샷건 전체의 밀어내는 힘")]
+    public float totalForce = 50f;
+
     // 내부 상태 변수들
     private float _nextFireTime;
     private bool _isReloading = false;
@@ -68,13 +76,17 @@ public class ViewmodelGunController : MonoBehaviour
         currentAmmo = maxAmmo;
 
         // [방어] gunAnimator와 World Model animator가 같은 오브젝트를 가리키면 즉시 경고
-        if (_hub != null && gunAnimator != null && _hub.animatorHandler.animator != null)
+        if (_hub != null && gunAnimator != null && _hub.animatorHandler.bodyAnimators != null)
         {
-            if (gunAnimator == _hub.animatorHandler.animator)
+            foreach (var worldAnim in _hub.animatorHandler.bodyAnimators)
             {
-                Debug.LogError("[ViewmodelGunController] ⛔ gunAnimator와 PlayerAnimatorHandler.animator가 동일한 객체입니다!\n" +
-                               "이 상태에서는 World Model의 Walk Blend Tree가 GunUpper에 재생됩니다.\n" +
-                               "인스펙터에서 gunAnimator를 GunUpper 전용 Animator로 교체하세요.");
+                if (worldAnim != null && gunAnimator == worldAnim)
+                {
+                    Debug.LogError("[ViewmodelGunController] ⛔ gunAnimator가 PlayerAnimatorHandler.bodyAnimators에 포함되어 있습니다!\n" +
+                                   "이 상태에서는 World Model의 Blend Tree가 GunUpper에 재생됩니다.\n" +
+                                   "인스펙터에서 gunAnimator를 GunUpper 전용 Animator로 교체하세요.");
+                    break;
+                }
             }
         }
         
@@ -186,14 +198,30 @@ public class ViewmodelGunController : MonoBehaviour
         currentAmmo--;
         _nextFireTime = Time.time + fireRate;
         
-        // [수정] 믹사모 애니메이션 호출 삭제!
-        // 대신 피벗 자체에 코딩으로 반동(Kick)을 팍! 때려넣습니다.
+        // 절차적 반동(Kick)
         _recoilTargetPos += recoilKickPos;
         _recoilTargetRot += recoilKickRot;
 
-        if (Physics.Raycast(mainCameraTransform.position, mainCameraTransform.forward, out RaycastHit hit, range))
+        // 샷건 전체 힘을 산탄 개수만큼 분산 (펠릿 하나당 힘)
+        float forcePerPellet = totalForce / pelletCount;
+
+        // 산탄 개수만큼 반복해서 레이캐스트 발사
+        for (int i = 0; i < pelletCount; i++)
         {
-            Debug.Log($"Hit: {hit.collider.name}");
+            // 총구 방향(forward)에 랜덤한 퍼짐(Spread) 값 추가
+            Vector3 spread = UnityEngine.Random.insideUnitSphere * spreadAngle;
+            Vector3 shootDirection = (mainCameraTransform.forward + spread).normalized;
+
+            if (Physics.Raycast(mainCameraTransform.position, shootDirection, out RaycastHit hit, range))
+            {
+                // AI 피격 처리: 각 펠릿마다 맞은 뼈다귀에 개별 물리력 적용
+                var ragdoll = hit.collider.GetComponentInParent<EnemyRagdollHandler>();
+                if (ragdoll != null)
+                {
+                    Rigidbody hitBone = hit.collider.attachedRigidbody;
+                    ragdoll.ApplyHit(hit.point, shootDirection, forcePerPellet, hitBone);
+                }
+            }
         }
     }
 

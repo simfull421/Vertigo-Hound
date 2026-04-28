@@ -17,12 +17,26 @@ public sealed class PlayerMovement
     [Header("Descent & Landing")]
     public float minFallSpeedForDescent = -5f;
     public float minAirTimeForRoll = 0.5f;     
+    [Tooltip("하강 시 중력 가속도 배율 (기본값 2.5 = 2.5배 빠르게 낙하)")]
+    public float fallMultiplier = 2.5f;
 
     [Header("Camera & Look Hierarchy")]
     [Tooltip("마우스 위아래(Pitch) 회전을 전담하는 피벗입니다.")]
     public Transform cameraPitchPivot;
     public float mouseSensitivity = 0.1f;
+    [Tooltip("카메라가 위를 바라볼 수 있는 최대 각도 (음수, 기본값 -90)")]
+    public float maxPitchUp = -90f;
+    [Tooltip("카메라가 아래를 바라볼 수 있는 최대 각도 (양수, 자신의 목이 보이지 않게 조절)")]
+    public float maxPitchDown = 70f;
     private float xRotation = 0f;
+
+    [Header("Hover Suspension")]
+    [Tooltip("캡슐 중심에서 바닥까지 띄울 목표 높이. 캡슐의 extents.y(보통 1)보다 커야 바닥에 닿지 않습니다.")]
+    public float rideHeight = 1.2f;
+    [Tooltip("서스펜션 레이캐스트 최대 길이")]
+    public float raycastLength = 1.5f;
+    [Tooltip("스프링 강도. 숫자가 높을수록 딱딱하게 버팁니다.")]
+    public float springStiffness = 250f;
 
     [Header("Ground Check")]
     public LayerMask groundMask;
@@ -35,6 +49,8 @@ public sealed class PlayerMovement
 
     private PlayerController _hub;
     private bool _wasGrounded;
+    private bool _wasWalking;
+    private bool _wasSprinting;
 
     public void Initialize(PlayerController hub)
     {
@@ -50,7 +66,6 @@ public sealed class PlayerMovement
         if (!IsGrounded)
         {
             CurrentAirTime += Time.deltaTime;
-            CheckDescentState();
             
             // 공중일 때 HighestY 최고점 갱신
             if (_hub.transform.position.y > HighestY)
@@ -61,35 +76,82 @@ public sealed class PlayerMovement
         else
         {
             CurrentAirTime = 0f;
-            HighestY = _hub.transform.position.y; // 바닥일 때는 현재 높이로 동기화
+            HighestY = _hub.transform.position.y; 
             
             if (_hub.cameraActionController != null)
             {
                 _hub.cameraActionController.ResetDescentPitch();
             }
         }
+
+        UpdateMovementJuiceTriggers();
+    }
+
+    private void UpdateMovementJuiceTriggers()
+    {
+        if (_hub.juiceController == null) return;
+
+        Vector3 currentXZVelocity = new Vector3(_hub.Rb.linearVelocity.x, 0, _hub.Rb.linearVelocity.z);
+        float currentSpeed = currentXZVelocity.magnitude;
+
+        bool isSprinting = _hub.InputProv.DashHeld && currentSpeed > walkSpeed;
+        bool isWalking = IsGrounded && currentSpeed > 0.1f && !isSprinting;
+        bool isRunningNow = IsGrounded && isSprinting;
+
+        bool strafeActive = !_hub.vault.IsVaulting;
+        if (strafeActive)
+        {
+            _hub.juiceController.TriggerStrafe(_hub.InputProv.MoveInput.x);
+        }
+
+        if (isRunningNow && !_wasSprinting)
+        {
+            _hub.juiceController.TriggerSprintStart();
+        }
+        else if (!isRunningNow && _wasSprinting)
+        {
+            _hub.juiceController.TriggerSprintStop();
+        }
+
+        if (isWalking && !_wasWalking)
+        {
+            _hub.juiceController.TriggerWalkStart();
+        }
+        else if (!isWalking && _wasWalking)
+        {
+            _hub.juiceController.TriggerWalkStop();
+        }
+
+        _wasSprinting = isRunningNow;
+        _wasWalking = isWalking;
     }
 
     public void FixedUpdateModule()
     {
-        // 경사면에서는 PlayerRamp가 중력을 관리하므로 여기서는 비경사면만 켬
-        if (!_hub.ramp.IsOnRamp)
-            _hub.Rb.useGravity = true;
+        _hub.Rb.useGravity = true;
 
         MovePlayer();
 
-        // 1. 무중력 탈출 (Heavy Jump) 로직
-        // 하강 중일 때 추가적인 하향 가속도를 곱연산하여 묵직하게 떨어지게 만듭니다.
+        if (IsGrounded && (Time.time - _lastJumpTime > 0.2f))
+        {
+            ApplySuspension();
+        }
+
+        // 1. 무중력 탈출 (Heavy Jump) 로직 - Fall Multiplier
+        // 정점을 찍고 하강 중일 때 추가 중력을 더해 묵직하게 꽂히도록 만듭니다.
         if (_hub.Rb.linearVelocity.y < 0f && !IsGrounded)
         {
-            _hub.Rb.AddForce(Physics.gravity * 1.5f, ForceMode.Acceleration);
+            _hub.Rb.linearVelocity += Vector3.up * Physics.gravity.y * (fallMultiplier - 1f) * Time.fixedDeltaTime;
         }
     }
+
+    private float _lastJumpTime;
 
     public void HandleJump()
     {
         if (IsGrounded)
         {
+            _lastJumpTime = Time.time;
             _hub.Rb.linearVelocity = new Vector3(_hub.Rb.linearVelocity.x, 0f, _hub.Rb.linearVelocity.z);
             Vector3 jumpDir = Vector3.Lerp(Vector3.up, GroundNormal, 0.6f).normalized;
             
@@ -114,7 +176,7 @@ public sealed class PlayerMovement
         float mouseY = lookInput.y * mouseSensitivity;
 
         xRotation -= mouseY;
-        xRotation = Mathf.Clamp(xRotation, -90f, 90f);
+        xRotation = Mathf.Clamp(xRotation, maxPitchUp, maxPitchDown);
         
         if (cameraPitchPivot != null)
         {
@@ -130,7 +192,6 @@ public sealed class PlayerMovement
         bool isMoving = moveInput.sqrMagnitude > 0.01f;
 
         float currentTargetSpeed = walkSpeed;
-        currentTargetSpeed *= _hub.ramp.GetWalkSpeedMultiplier();
 
         if (_hub.InputProv.DashHeld && isMoving)
         {
@@ -163,27 +224,23 @@ public sealed class PlayerMovement
         _hub.Rb.linearVelocity = new Vector3(newXZVelocity.x, _hub.Rb.linearVelocity.y, newXZVelocity.z);
     }
 
+    private float _currentRideHeight;
+
     private void CheckGrounded()
     {
         _wasGrounded = IsGrounded;
 
-        Vector3 bottom = _hub.Capsule.bounds.center - new Vector3(0, _hub.Capsule.bounds.extents.y, 0);
-        bool hitSphere = Physics.CheckSphere(bottom + Vector3.up * 0.3f, 0.45f, groundMask);
+        // 캡슐 반경보다 약간 작게 쏴서 모서리에 걸리는 것 방지
+        float radius = _hub.Capsule.radius * 0.9f;
 
-        if (hitSphere)
+        if (Physics.SphereCast(_hub.Capsule.bounds.center, radius, Vector3.down, out RaycastHit hit, raycastLength, groundMask))
         {
-            if (Physics.Raycast(_hub.Capsule.bounds.center, Vector3.down, out RaycastHit hit, _hub.Capsule.bounds.extents.y + 0.5f, groundMask))
-            {
-                GroundNormal = hit.normal;
-            }
-            else
-            {
-                GroundNormal = Vector3.up;
-            }
-
+            GroundNormal = hit.normal;
             if (Vector3.Angle(Vector3.up, GroundNormal) <= 50f)
             {
                 IsGrounded = true;
+                _currentRideHeight = hit.distance;
+
                 if (!_wasGrounded)
                 {
                     OnLanded();
@@ -199,6 +256,18 @@ public sealed class PlayerMovement
             IsGrounded = false;
             GroundNormal = Vector3.up;
         }
+    }
+
+    private void ApplySuspension()
+    {
+        float mass = _hub.Rb.mass;
+        // 임계 감쇠 공식 (Critical Damping)
+        float springDamper = 2f * Mathf.Sqrt(springStiffness * mass);
+
+        // 조화 진동자 공식: F = k * (H_target - H_current) - c * v_y
+        float springForce = springStiffness * (rideHeight - _currentRideHeight) - springDamper * _hub.Rb.linearVelocity.y;
+        
+        _hub.Rb.AddForce(Vector3.up * springForce, ForceMode.Force);
     }
 
     private void OnLanded()
@@ -242,17 +311,6 @@ public sealed class PlayerMovement
         }
 
         HighestY = _hub.transform.position.y;
-    }
-
-    private void CheckDescentState()
-    {
-        if (_hub.Rb.linearVelocity.y < minFallSpeedForDescent)
-        {
-            if (_hub.juiceController != null)
-            {
-                _hub.juiceController.UpdateDescentShake(CurrentAirTime, _hub.Rb.linearVelocity.y);
-            }
-        }
     }
 
     public void ForceLookDirection(Vector3 direction)

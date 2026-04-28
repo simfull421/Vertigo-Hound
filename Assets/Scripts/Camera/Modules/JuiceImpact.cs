@@ -5,7 +5,7 @@ using System.Collections;
 using System;
 
 [Serializable]
-public sealed class JuiceImpact
+public sealed class JuiceImpact : IJuiceModule
 {
     [Header("Descent Shake")]
     public float descentShakeMultiplier = 0.05f;
@@ -24,18 +24,26 @@ public sealed class JuiceImpact
     public float burstFOV = 115f;
     public AnimationCurve fovCurve;
 
-    [Header("Advanced Parkour Juice")]
-    public float slideJumpPunchPitch = -8f; // 고개를 뒤로 확 젖힘 (Up)
-    public float slideJumpPunchFOV = 15f;
-    public float slideJumpPunchDuration = 0.4f;
+    [Header("Kick Juice")]
+    public float kickPitch = -8f; // 고개를 살짝 위로 젖힘
+    public float kickRollAngle = 8f; // Z축으로 기우뚱
+    public float kickFOV = 15f;
+    public float kickDuration = 0.35f;
     
     public float activeLandingDipPitch = 45f; // 앞으로 고개를 숙임 (Down)
     public float activeLandingFOV = 10f;
     public float activeLandingDuration = 0.6f;
 
+    [Header("Breach Juice")]
+    public float breachPitch = 12f;
+    public float breachRollAmount = 5f;
+    public float breachFOV = 15f;
+
+    public bool IsActive => _vaultJuiceCoroutine != null || _landingDropCoroutine != null || _pulseCoroutine != null || _parkourJuiceCoroutine != null;
     public Vector3 PosOffset { get; private set; }
     public Vector3 RotOffset { get; private set; }
     public float FovOffset { get; private set; }
+    public float FovOverride => 0f;
 
     private Coroutine _vaultJuiceCoroutine;
     private Coroutine _landingDropCoroutine;
@@ -58,21 +66,26 @@ public sealed class JuiceImpact
         }
     }
 
-    public void UpdateModule()
+    private void EvaluateActiveState()
     {
-        // 지속 효과가 필요한 로직을 여기서 돌립니다.
-        // 강하 쉐이크는 이벤트 기반으로 들어오므로 대기합니다.
-    }
-
-    public void UpdateDescentShake(float airTime, float yVelocity)
-    {
-        // 공중 체공 흔들림(Descent Shake) 로직 완전히 삭제 (Hotfix)
+        if (IsActive)
+        {
+            _hub.RegisterModule(this);
+        }
+        else
+        {
+            _hub.UnregisterModule(this);
+            PosOffset = Vector3.zero;
+            RotOffset = Vector3.zero;
+            FovOffset = 0f;
+        }
     }
 
     public void TriggerVaultJuice(float duration)
     {
         if (_vaultJuiceCoroutine != null) _hub.StopCoroutine(_vaultJuiceCoroutine);
         _vaultJuiceCoroutine = _hub.StartCoroutine(VaultJuiceRoutine(duration));
+        EvaluateActiveState();
     }
 
     private IEnumerator VaultJuiceRoutine(float duration)
@@ -93,7 +106,6 @@ public sealed class JuiceImpact
             float t = Mathf.Clamp01(elapsed / tiltInTime);
             float curveT = t * t * (3f - 2f * t); // SmoothStep
 
-            // [수정] Y축으로 내려갈 때 Z축(앞)으로 0.25f 만큼 밀어넣습니다.
             PosOffset = new Vector3(0f, Mathf.Lerp(0f, vaultDipDepth, curveT), Mathf.Lerp(0f, 0.25f, curveT));
             float currentRoll = Mathf.Lerp(0f, targetRoll, curveT);
             float currentPitch = Mathf.Lerp(0f, 5f, curveT);
@@ -125,9 +137,8 @@ public sealed class JuiceImpact
             yield return null;
         }
 
-        PosOffset = Vector3.zero;
-        RotOffset = Vector3.zero;
         _vaultJuiceCoroutine = null;
+        EvaluateActiveState();
     }
 
     public void TriggerLandingDrop(float intensityMultiplier = 1f)
@@ -136,6 +147,7 @@ public sealed class JuiceImpact
         
         float dropTarget = Mathf.Clamp(maxLandingDrop * intensityMultiplier, 0.5f, maxLandingDrop);
         _landingDropCoroutine = _hub.StartCoroutine(LandingDropRoutine(dropTarget));
+        EvaluateActiveState();
     }
 
     private IEnumerator LandingDropRoutine(float dropTarget)
@@ -146,8 +158,6 @@ public sealed class JuiceImpact
         {
             elapsed += Time.deltaTime;
             float t = elapsed / dropDuration;
-            // [수정] 수직(-Y)으로만 내려가지 말고, 내려가는 양에 비례해서 앞(+Z)으로 목을 빼줍니다.
-            // Z축으로 0.4f 정도 앞으로 밀어주면 가슴팍을 뚫는 현상이 사라집니다.
             Vector3 targetDropPos = new Vector3(0f, -dropTarget, dropTarget * 0.4f); 
             PosOffset = Vector3.Lerp(Vector3.zero, targetDropPos, t);
             yield return null;
@@ -162,14 +172,15 @@ public sealed class JuiceImpact
             yield return null;
         }
 
-        PosOffset = Vector3.zero;
         _landingDropCoroutine = null;
+        EvaluateActiveState();
     }
 
     public void TriggerPulsingEffect(float duration)
     {
         if (_pulseCoroutine != null) _hub.StopCoroutine(_pulseCoroutine);
         _pulseCoroutine = _hub.StartCoroutine(PulseRoutine(duration));
+        EvaluateActiveState();
     }
 
     private IEnumerator PulseRoutine(float duration)
@@ -181,7 +192,6 @@ public sealed class JuiceImpact
             float t = elapsed / duration;
             float curveValue = (fovCurve != null && fovCurve.length > 0) ? fovCurve.Evaluate(t) : Mathf.Sin(t * Mathf.PI);
 
-            // Additive를 위해 BaseFOV 대비 얼마나 치솟을 것인지 계산
             FovOffset = Mathf.LerpUnclamped(0f, burstFOV - _hub.baseFOV, curveValue);
 
             if (_motionBlur != null) _motionBlur.intensity.value = Mathf.Lerp(0f, 1f, curveValue);
@@ -190,10 +200,10 @@ public sealed class JuiceImpact
             yield return null;
         }
 
-        FovOffset = 0f;
         if (_motionBlur != null) _motionBlur.intensity.value = 0f;
         if (_lensDistortion != null) _lensDistortion.intensity.value = 0f;
         _pulseCoroutine = null;
+        EvaluateActiveState();
     }
 
     public void InterruptPulse()
@@ -206,30 +216,92 @@ public sealed class JuiceImpact
         FovOffset = 0f;
         if (_motionBlur != null) _motionBlur.intensity.value = 0f;
         if (_lensDistortion != null) _lensDistortion.intensity.value = 0f;
+        EvaluateActiveState();
     }
 
-    // ============================================
-    // 고급 파쿠르용 연출 (Slide Jump Punch & Active Landing)
-    // ============================================
-
-    public void TriggerSlideJumpPunch()
+    public void TriggerBreachJuice(float duration)
     {
         if (_parkourJuiceCoroutine != null) _hub.StopCoroutine(_parkourJuiceCoroutine);
-        _parkourJuiceCoroutine = _hub.StartCoroutine(ParkourJuiceRoutine(slideJumpPunchPitch, slideJumpPunchFOV, slideJumpPunchDuration, true));
+        _parkourJuiceCoroutine = _hub.StartCoroutine(BreachJuiceRoutine(duration));
+        EvaluateActiveState();
+    }
+
+    private IEnumerator BreachJuiceRoutine(float duration)
+    {
+        float elapsed = 0f;
+        float targetPitch = breachPitch; 
+        float targetRoll = UnityEngine.Random.value > 0.5f ? breachRollAmount : -breachRollAmount; 
+        float targetFOV = breachFOV;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = elapsed / duration;
+            
+            float weight = t < 0.15f ? (t / 0.15f) : (1f - (t - 0.15f) / 0.85f);
+            weight = weight * weight * (3f - 2f * weight); // SmoothStep
+
+            RotOffset = new Vector3(Mathf.Lerp(0f, targetPitch, weight), 0f, Mathf.Lerp(0f, targetRoll, weight));
+            FovOffset = Mathf.Lerp(0f, targetFOV, weight);
+
+            if (_lensDistortion != null) _lensDistortion.intensity.value = Mathf.Lerp(0f, -0.3f, weight);
+            if (_motionBlur != null) _motionBlur.intensity.value = Mathf.Lerp(0f, 0.8f, weight);
+
+            yield return null;
+        }
+
+        if (_lensDistortion != null) _lensDistortion.intensity.value = 0f;
+        if (_motionBlur != null) _motionBlur.intensity.value = 0f;
+        _parkourJuiceCoroutine = null;
+        EvaluateActiveState();
+    }
+
+    public void TriggerKickJuice()
+    {
+        if (_parkourJuiceCoroutine != null) _hub.StopCoroutine(_parkourJuiceCoroutine);
+        _parkourJuiceCoroutine = _hub.StartCoroutine(KickJuiceRoutine());
+        EvaluateActiveState();
+    }
+
+    private IEnumerator KickJuiceRoutine()
+    {
+        float elapsed = 0f;
+        float targetRoll = UnityEngine.Random.value > 0.5f ? kickRollAngle : -kickRollAngle;
+
+        while (elapsed < kickDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = elapsed / kickDuration;
+            
+            float weight = t < 0.2f ? (t / 0.2f) : (1f - (t - 0.2f) / 0.8f);
+            weight = weight * weight * (3f - 2f * weight); // SmoothStep
+
+            RotOffset = new Vector3(Mathf.Lerp(0f, kickPitch, weight), 0f, Mathf.Lerp(0f, targetRoll, weight));
+            FovOffset = Mathf.Lerp(0f, kickFOV, weight);
+
+            if (_lensDistortion != null) _lensDistortion.intensity.value = Mathf.Lerp(0f, -0.4f, weight);
+            if (_motionBlur != null) _motionBlur.intensity.value = Mathf.Lerp(0f, 0.6f, weight);
+
+            yield return null;
+        }
+
+        if (_lensDistortion != null) _lensDistortion.intensity.value = 0f;
+        if (_motionBlur != null) _motionBlur.intensity.value = 0f;
+        
+        _parkourJuiceCoroutine = null;
+        EvaluateActiveState();
     }
 
     public void TriggerActiveLandingRoll()
     {
         if (_parkourJuiceCoroutine != null) _hub.StopCoroutine(_parkourJuiceCoroutine);
         _parkourJuiceCoroutine = _hub.StartCoroutine(ParkourJuiceRoutine(activeLandingDipPitch, activeLandingFOV, activeLandingDuration, false));
+        EvaluateActiveState();
     }
 
     private IEnumerator ParkourJuiceRoutine(float targetPitch, float targetFOV, float duration, bool isPunch)
     {
         float elapsed = 0f;
-        
-        // Punch는 초반에 빠르게 튀고 천천히 복구 (EaseOut)
-        // Landing은 부드럽게 숙였다가 부드럽게 복구 (Sine)
         
         while (elapsed < duration)
         {
@@ -239,20 +311,17 @@ public sealed class JuiceImpact
             float weight;
             if (isPunch)
             {
-                // 빠른 Attack, 느린 Decay
                 weight = t < 0.2f ? (t / 0.2f) : (1f - (t - 0.2f) / 0.8f);
                 weight = weight * weight * (3f - 2f * weight); // smooth
             }
             else
             {
-                // 1회의 Sine 파동
                 weight = Mathf.Sin(t * Mathf.PI);
             }
 
             RotOffset = new Vector3(Mathf.Lerp(0f, targetPitch, weight), 0f, 0f);
             FovOffset = Mathf.Lerp(0f, targetFOV, weight);
 
-            // Active Landing일 때만 미세한 흔들림(Shake) 추가
             if (!isPunch)
             {
                 float shakeForce = weight * 1.5f;
@@ -265,18 +334,16 @@ public sealed class JuiceImpact
             }
             else
             {
-                // Punch 일 때는 스피드감을 위해 렌즈 왜곡
                 if (_lensDistortion != null) _lensDistortion.intensity.value = Mathf.Lerp(0f, -0.4f, weight);
             }
 
             yield return null;
         }
 
-        RotOffset = Vector3.zero;
-        FovOffset = 0f;
         if (_motionBlur != null) _motionBlur.intensity.value = 0f;
         if (_lensDistortion != null) _lensDistortion.intensity.value = 0f;
         
         _parkourJuiceCoroutine = null;
+        EvaluateActiveState();
     }
 }

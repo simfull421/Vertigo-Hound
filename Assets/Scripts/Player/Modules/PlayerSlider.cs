@@ -19,6 +19,7 @@ public sealed class PlayerSlider
 
     private float _originalCapsuleHeight;
     private Vector3 _originalCapsuleCenter;
+    private float _originalRideHeight;
 
     private PlayerController _hub;
 
@@ -27,6 +28,7 @@ public sealed class PlayerSlider
         _hub = hub;
         _originalCapsuleHeight = _hub.Capsule.height;
         _originalCapsuleCenter = _hub.Capsule.center;
+        _originalRideHeight = _hub.movement.rideHeight;
     }
 
     public void UpdateModule()
@@ -70,7 +72,7 @@ public sealed class PlayerSlider
 
         if (_hub.juiceController != null)
         {
-             _hub.juiceController.TriggerSlideJumpPunch();
+             _hub.juiceController.TriggerKickJuice();
         }
     }
 
@@ -82,7 +84,7 @@ public sealed class PlayerSlider
 
         if (!IsSliding && !IsCrouching)
         {
-            if (crouchInput && _hub.movement.IsGrounded && !_hub.wallRunner.IsWallRunning)
+            if (crouchInput && _hub.movement.IsGrounded)
             {
                 // 달리기 상태(가속 중)이거나 경사면일 때 슬라이딩
                 bool isJoggingOrSprinting = currentSpeed >= 6.5f && _hub.InputProv.DashHeld;
@@ -110,7 +112,7 @@ public sealed class PlayerSlider
         {
             bool tooSlow = currentSpeed <= crouchSpeed && !_hub.ramp.IsOnRamp;
             
-            if (!crouchInput || !_hub.movement.IsGrounded || _hub.wallRunner.IsWallRunning)
+            if (!crouchInput || !_hub.movement.IsGrounded)
             {
                 AttemptStopCrouchOrSlide();
             }
@@ -123,7 +125,7 @@ public sealed class PlayerSlider
         }
         else if (IsCrouching)
         {
-            if (!crouchInput || !_hub.movement.IsGrounded || _hub.wallRunner.IsWallRunning)
+            if (!crouchInput || !_hub.movement.IsGrounded)
             {
                 AttemptStopCrouchOrSlide();
             }
@@ -139,6 +141,9 @@ public sealed class PlayerSlider
         _hub.Capsule.height = _originalCapsuleHeight * slideHeightRatio;
         float dipAmount = _originalCapsuleHeight * (1f - slideHeightRatio) / 2f;
         _hub.Capsule.center = new Vector3(_originalCapsuleCenter.x, _originalCapsuleCenter.y - dipAmount, _originalCapsuleCenter.z);
+        
+        // 추가: 호버링 목표 높이(Ride Height)도 스케일에 맞춰 감소
+        _hub.movement.rideHeight = _originalRideHeight * slideHeightRatio;
 
         Vector3 slideDir = new Vector3(_hub.Rb.linearVelocity.x, 0f, _hub.Rb.linearVelocity.z).normalized;
         if (slideDir.sqrMagnitude < 0.1f) slideDir = _hub.transform.forward;
@@ -157,7 +162,7 @@ public sealed class PlayerSlider
 
         if (_hub.juiceController != null)
         {
-            _hub.juiceController.TriggerSlideStart(dipAmount);
+            _hub.juiceController.TriggerSlideStart();
         }
     }
 
@@ -168,6 +173,9 @@ public sealed class PlayerSlider
         _hub.Capsule.height = _originalCapsuleHeight * slideHeightRatio;
         float dipAmount = _originalCapsuleHeight * (1f - slideHeightRatio) / 2f;
         _hub.Capsule.center = new Vector3(_originalCapsuleCenter.x, _originalCapsuleCenter.y - dipAmount, _originalCapsuleCenter.z);
+        
+        // 추가: 호버링 목표 높이(Ride Height)도 스케일에 맞춰 감소
+        _hub.movement.rideHeight = _originalRideHeight * slideHeightRatio;
 
         // 앉기는 Impulse 부여나 이펙트가 필요 없이 캡슐만 축소함.
     }
@@ -200,6 +208,9 @@ public sealed class PlayerSlider
 
         _hub.Capsule.height = _originalCapsuleHeight;
         _hub.Capsule.center = _originalCapsuleCenter;
+        
+        // 일어날 때 원래 호버링 높이로 복구
+        _hub.movement.rideHeight = _originalRideHeight;
 
         if (wasSliding && _hub.juiceController != null)
         {

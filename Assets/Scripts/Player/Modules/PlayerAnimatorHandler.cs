@@ -4,9 +4,9 @@ using System;
 [Serializable]
 public sealed class PlayerAnimatorHandler
 {
-    [Header("Animator Components")]
-    [Tooltip("반드시 World Model(본체 캐릭터)의 Animator를 연결하세요. Gun Upper / Run Upper 등 뷰모델 Animator를 연결하면 Walk Blend Tree가 뷰모델에 재생되는 버그가 발생합니다!")]
-    public Animator animator;
+    [Header("World Models (Inspector에서 할당)")]
+    [Tooltip("여기에 부모(다리)와 자식(상체/전체) 등 동일한 컨트롤러를 쓰는 월드 모델 애니메이터들을 배열로 넣으세요.")]
+    public Animator[] bodyAnimators; 
 
     [Header("Animation Smooth Damp")]
     [Tooltip("입력 및 이동 애니메이션 보간의 쫀득함을 조정합니다 (값이 클수록 부드럽지만 느리게 반응).")]
@@ -15,6 +15,16 @@ public sealed class PlayerAnimatorHandler
     [Header("Weapon Settings")]
     [Tooltip("현재 활성화된 무기 타입 (0: 맨손, 1: 권총)")]
     public int currentWeaponType = 0;
+
+    [Header("Melee Combat (Kick)")]
+    [Tooltip("발차기 타격 범위(거리)")]
+    public float kickRange = 2.5f;
+    [Tooltip("발차기 판정 반경(두께)")]
+    public float kickRadius = 0.8f;
+    [Tooltip("발차기 타격력 (높을수록 공처럼 멀리 날아감)")]
+    public float kickForce = 60f;
+    [Tooltip("연속 발차기 쿨타임")]
+    public float kickCooldown = 0.6f;
     
     [Header("Animation Sync")]
     public float baseMoveSpeed = 4f; // 걷기 애니메이션이 정상적으로 보일 때의 실제 이동 속도 기준점
@@ -24,10 +34,11 @@ public sealed class PlayerAnimatorHandler
     [Tooltip("플레이어의 진짜 몸뚱이 렌더러들 (SkinMeshRenderer 등)")]
     public SkinnedMeshRenderer[] worldModelRenderers;
     private PlayerController _hub;
-    // [Dual-Model] RunUpper 뷰모델의 Animator — Initialize 시 Hub에서 캐싱
+    
+    public float CurrentMoveMultiplier { get; private set; } = 1f;
+
+    // [Dual-Model] RunUpper 뷰모델의 Animator — Initialize 시 Hub에서 캐싱. (본체와 완전히 다른 컨트롤러 사용)
     private Animator _runUpperAnimator;
-
-
 
     // SmoothDamp를 위한 레퍼런스 속도 변수
     private float _moveXVelocity;
@@ -44,47 +55,48 @@ public sealed class PlayerAnimatorHandler
     private readonly int hashSpeed = Animator.StringToHash("Speed");
     private readonly int hashMoveX = Animator.StringToHash("MoveX");
     private readonly int hashMoveY = Animator.StringToHash("MoveY");
+    private readonly int hashMoveMultiplier = Animator.StringToHash("MoveMultiplier");
     private readonly int hashIsCrouching = Animator.StringToHash("IsCrouching");
     private readonly int hashWeaponType = Animator.StringToHash("WeaponType");
     
-    private readonly int hashTriggerPunch = Animator.StringToHash("TriggerPunch");
+    private readonly int hashTriggerKick = Animator.StringToHash("TriggerKick");
     private readonly int hashTriggerJump = Animator.StringToHash("TriggerJump");
     private readonly int hashTriggerStop = Animator.StringToHash("TriggerStop");
     private readonly int hashIsSliding = Animator.StringToHash("IsSliding");
     private readonly int hashTriggerSlideEnter = Animator.StringToHash("Slide_Enter");
-    private readonly int hashPunchIndex = Animator.StringToHash("PunchIndex");
+    private readonly int hashKickIndex = Animator.StringToHash("KickIndex");
 
     private bool _wasSliding;
     private bool _wasCrouching;
-    private float _nextPunchTime;
+    private float _nextKickTime;
     
     public void Initialize(PlayerController hub)
     {
         _hub = hub;
 
         // [Dual-Model] RunUpper Animator는 PlayerController.Awake에서 캐싱한 값을 참조
-        // (PlayerController.Awake에서 animatorHandler.Initialize 전에 runUpperAnimator 캐싱이 완료됨)
         _runUpperAnimator = _hub.runUpperAnimator;
         if (_runUpperAnimator == null && _hub.runUpper != null)
             Debug.LogWarning("[PlayerAnimatorHandler] runUpperAnimator가 null입니다. PlayerController Awake 초기화 순서를 확인하세요.");
 
-        if (animator != null)
+        if (bodyAnimators != null && bodyAnimators.Length > 0)
         {
-            // 초기 무기 타입 및 뷰모델 상태 설정
-            animator.SetInteger(hashWeaponType, currentWeaponType);
+            // 초기 무기 타입 세팅
+            SyncSetInteger(hashWeaponType, currentWeaponType);
+            
             // 초기 뷰모델 활성 상태 세팅
             if (_hub.viewmodelGun != null) _hub.viewmodelGun.SetActive(currentWeaponType == 1);
             if (_hub.runUpper != null) _hub.runUpper.SetActive(currentWeaponType == 0);
         }
         else
         {
-            Debug.LogWarning("[PlayerAnimatorHandler] World Model Animator is not assigned!");
+            Debug.LogWarning("[PlayerAnimatorHandler] World Model Animators array is empty!");
         }
     }
 
     public void UpdateModule()
     {
-        if (animator == null) return;
+        if (bodyAnimators == null || bodyAnimators.Length == 0) return;
 
         HandleMovementAnimation();
         HandleWeaponSwitch();
@@ -94,7 +106,7 @@ public sealed class PlayerAnimatorHandler
     // [추가] 애니메이터가 스케일을 1로 되돌리는 것을 막기 위한 LateUpdate용 함수
     public void LateUpdateModule()
     {
-        if (animator == null) return;
+        if (bodyAnimators == null || bodyAnimators.Length == 0) return;
 
         if (currentWeaponType == 1) // 총기 들었을 때
         {// 몸통을 투명하게 하되, 그림자는 남깁니다.
@@ -114,24 +126,48 @@ public sealed class PlayerAnimatorHandler
 
     private void HandleMovementAnimation()
     {
-        // ... (기존 코드 완벽하게 동일) ...
         Vector2 input = _hub.InputProv.MoveInput;
         bool isMoving = input.sqrMagnitude > 0.01f;
         
-        float targetMoveX = isMoving ? Mathf.Clamp(input.x, -1f, 1f) : 0f;
-        float targetMoveY = isMoving ? Mathf.Clamp(input.y, -1f, 1f) : 0f;
+        // 1. 파쿠르 중이거나 공중에 있을 경우 (WallRun, Vault, Slide) 강제로 팔/이동 인풋 차단
+        bool isParkour = _hub.slider.IsSliding || _hub.vault.IsVaulting;
 
-        if (isMoving)
+        float targetMoveX = (isMoving && !isParkour) ? Mathf.Clamp(input.x, -1f, 1f) : 0f;
+        float targetMoveY = (isMoving && !isParkour) ? Mathf.Clamp(input.y, -1f, 1f) : 0f;
+
+        float actualSpeedXZ = new Vector3(_hub.Rb.linearVelocity.x, 0, _hub.Rb.linearVelocity.z).magnitude;
+
+        if (isMoving && !isParkour)
         {
-            if (targetMoveY > 0f && _hub.InputProv.DashHeld)
+            // 2. 제자리 달리기 및 공중 달리기 봉쇄: Shift를 눌렀어도 지면에 닿아있고 실제 걷기 속도 이상으로 나아갈 때만 달리기로 인정
+            if (targetMoveY > 0f && _hub.InputProv.DashHeld && actualSpeedXZ > _hub.movement.walkSpeed * 0.5f && _hub.movement.IsGrounded)
             {
                 targetMoveY = 2.0f;
             }
         }
 
+        // 3. 파쿠르(Slide, Vault) 진행 중엔 상체 흔들기 레이어(Layer 1) 가중치를 0으로 부드럽게 감소
+        foreach (var anim in bodyAnimators)
+        {
+            if (anim != null && anim.layerCount > 1)
+            {
+                float currentWeight = anim.GetLayerWeight(1);
+                float targetWeight = isParkour ? 0f : 1f;
+                anim.SetLayerWeight(1, Mathf.MoveTowards(currentWeight, targetWeight, Time.deltaTime * 6f));
+            }
+        }
+
+        // RunUpper 뷰모델의 경우 자체적인 레이어가 존재한다면 흔들기 강도 감소
+        if (_runUpperAnimator != null && _runUpperAnimator.layerCount > 1)
+        {
+            float currentViewWeight = _runUpperAnimator.GetLayerWeight(1);
+            float targetViewWeight = isParkour ? 0f : 1f;
+            _runUpperAnimator.SetLayerWeight(1, Mathf.MoveTowards(currentViewWeight, targetViewWeight, Time.deltaTime * 6f));
+        }
+
         if (_previousTargetMoveY > 1.5f && targetMoveY < 0.1f)
         {
-            animator.SetTrigger(hashTriggerStop);
+            SyncSetTrigger(hashTriggerStop);
         }
         _previousTargetMoveY = targetMoveY;
 
@@ -141,14 +177,12 @@ public sealed class PlayerAnimatorHandler
         float targetSpeed = new Vector2(targetMoveX, targetMoveY).magnitude;
         _currentSpeed = Mathf.SmoothDamp(_currentSpeed, targetSpeed, ref _speedVelocity, moveSmoothTime);
 
-        // World Model Animator에 파라미터 전달 (본체 그림자 애니메이션용)
-        animator.SetFloat(hashSpeed, _currentSpeed);
-        animator.SetFloat(hashMoveX, _currentMoveX);
-        animator.SetFloat(hashMoveY, _currentMoveY);
+        // 오직 배열에 들어있는 부모/자식 모델에게만 파라미터를 쏩니다.
+        SyncSetFloat(hashSpeed, _currentSpeed);
+        SyncSetFloat(hashMoveX, _currentMoveX);
+        SyncSetFloat(hashMoveY, _currentMoveY);
 
-        // [Dual-Model 브로드캐스트] 맨손 상태이고 RunUpper가 활성화되어 있을 때만 동기화
-        // RunUpper는 speed 파라미터로 Walk/Run Blend Tree를 구동하므로 동일한 값을 쏴준다.
-        // animator.speed(배속 조절)는 World Model에만 적용하고, RunUpper에는 SetFloat만 사용.
+        // 런어퍼(뷰모델)는 철저하게 분리해서 따로 속도만 호출!
         if (currentWeaponType == 0 && _runUpperAnimator != null && _hub.runUpper.activeInHierarchy)
         {
             _runUpperAnimator.SetFloat(hashSpeed, _currentSpeed);
@@ -158,38 +192,36 @@ public sealed class PlayerAnimatorHandler
 
         bool crouchInput = _hub.InputProv.CrouchHeld || _hub.InputProv.SlideHeld;
         bool isSprintIntent = targetMoveY >= 1.5f && _hub.InputProv.DashHeld;
-    // [수정] 애니메이션 배속 제한 (블렌드 트리와 이중 가속 방지)
-        // 블렌드 트리가 Speed 파라미터로 이미 질주 모션을 틀어주므로,
-        // animator.speed는 0.85 ~ 1.1 사이로 꽉 묶어 '발 미끄러짐 보정'만 담당하게 함.
-        // RunUpper도 동일 배속으로 동기화해서 뷰모델 팔과 월드 모델 다리 속도를 통일.
+        
+        // 애니메이션 배속 퍼포먼스 (스피드 Multiplier 파라미터로 이관)
         float actualSpeed = new Vector3(_hub.Rb.linearVelocity.x, 0, _hub.Rb.linearVelocity.z).magnitude;
 
-        if (actualSpeed > 0.1f)
-        {
-            float clampedSpeed = Mathf.Clamp(actualSpeed / baseMoveSpeed, 0.85f, 1.1f);
-            animator.speed = clampedSpeed;
+        // 1. 글로벌 배속(anim.speed)은 무조건 1f로 고정 (펀치, 파쿠르 애니메이션 속도 보존)
+        foreach (var anim in bodyAnimators) { if (anim != null) anim.speed = 1f; }
+        if (currentWeaponType == 0 && _runUpperAnimator != null && _hub.runUpper.activeInHierarchy)
+            _runUpperAnimator.speed = 1f;
 
-            // RunUpper(뷰모델)에도 동일 배속 적용
-            if (currentWeaponType == 0 && _runUpperAnimator != null && _hub.runUpper.activeInHierarchy)
-                _runUpperAnimator.speed = clampedSpeed;
-        }
-        else
+        // 2. 실제 속도에 비례한 클램핑 (다리의 시각적 발작 방지 마지노선 1.6배)
+        float clampedSpeed = (actualSpeed > 0.1f) ? Mathf.Clamp(actualSpeed / baseMoveSpeed, 0.8f, 1.6f) : 1f;
+        CurrentMoveMultiplier = clampedSpeed;
+
+        // 3. Blend Tree의 Multiplier로 사용될 파라미터 전송
+        SyncSetFloat(hashMoveMultiplier, clampedSpeed);
+        if (currentWeaponType == 0 && _runUpperAnimator != null && _hub.runUpper.activeInHierarchy)
         {
-            animator.speed = 1f;
-            if (currentWeaponType == 0 && _runUpperAnimator != null && _hub.runUpper.activeInHierarchy)
-                _runUpperAnimator.speed = 1f;
+            _runUpperAnimator.SetFloat(hashMoveMultiplier, clampedSpeed);
         }
 
         if (_wasSliding)
         {
             if (!_hub.slider.IsSliding)
             {
-                animator.SetBool(hashIsSliding, false);
+                SyncSetBool(hashIsSliding, false);
                 _wasSliding = false;
                 
                 if (_hub.slider.IsCrouching) 
                 {
-                    animator.SetBool(hashIsCrouching, true);
+                    SyncSetBool(hashIsCrouching, true);
                     _wasCrouching = true;
                 }
             }
@@ -198,7 +230,7 @@ public sealed class PlayerAnimatorHandler
         {
             if (!crouchInput || isSprintIntent)
             {
-                animator.SetBool(hashIsCrouching, false);
+                SyncSetBool(hashIsCrouching, false);
                 _wasCrouching = false;
             }
         }
@@ -210,20 +242,20 @@ public sealed class PlayerAnimatorHandler
                 
                 if (_currentMoveY >= 1.5f || isOnSlope)
                 {
-                    animator.SetTrigger(hashTriggerSlideEnter);
-                    animator.SetBool(hashIsSliding, true);
+                    SyncSetTrigger(hashTriggerSlideEnter);
+                    SyncSetBool(hashIsSliding, true);
                     _wasSliding = true;
                 }
                 else
                 {
-                    animator.SetBool(hashIsCrouching, true);
+                    SyncSetBool(hashIsCrouching, true);
                     _wasCrouching = true;
                 }
             }
         }
     }
 
- private void HandleWeaponSwitch()
+    private void HandleWeaponSwitch()
     {
         bool changed = false;
 
@@ -240,7 +272,7 @@ public sealed class PlayerAnimatorHandler
 
         if (changed)
         {
-            animator.SetInteger(hashWeaponType, currentWeaponType);
+            SyncSetInteger(hashWeaponType, currentWeaponType);
             
             if (currentWeaponType == 0) // 맨손(Run Upper) 장착
             {
@@ -253,35 +285,53 @@ public sealed class PlayerAnimatorHandler
                 if (_hub.viewmodelGun != null)
                 {
                     _hub.viewmodelGun.SetActive(true);
-
-                    // [수정] gunAnim.Update(0f) 제거.
-                    // 이 호출은 Unity Animator의 내부 업데이트 사이클을 desync시켜
-                    // SetActive 직후 Unity가 Animator 상태를 잘못된 시점에서 재평가하게 만드는
-                    // 부작용이 있습니다. GunUpper의 Animator는 자체 컨트롤러(Pistol Idle)를
-                    // SetActive 직후 자동으로 첫 State부터 재생하므로 수동 Update가 불필요합니다.
-
-                    // [방어] gunController.Initialize는 총기 오브젝트가 완전히
-                    // 활성화된 다음 프레임에 weaponRoot 로컬 좌표가 확정되므로 여기서 호출해도 안전.
-                    // 단, Update(0f) 없이 Initialize하면 T-Pose 좌표가 저장될 수 있으므로
-                    // gunController 측에서 첫 LateUpdate에서 _hipLocalPos를 갱신하도록 처리.
                     _hub.gunController.Initialize(_hub);
                 }
             }
         }
     }
+
     private void HandleActionTriggers()
     {
         if (_hub.InputProv.FireTriggered)
         {
             if (currentWeaponType == 0) // 맨손일 때
             {
-                if (Time.time >= _nextPunchTime)
+                if (Time.time >= _nextKickTime)
                 {
-                    int punchIndex = UnityEngine.Random.Range(0, 2);
-                    animator.SetInteger(hashPunchIndex, punchIndex);
-                    animator.SetTrigger(hashTriggerPunch);
+                    int kickIndex = UnityEngine.Random.Range(0, 2);
+                    SyncSetInteger(hashKickIndex, kickIndex);
+                    SyncSetTrigger(hashTriggerKick);
                     
-                    _nextPunchTime = Time.time + 0.6f; // 쿨타임
+                    _nextKickTime = Time.time + kickCooldown; 
+                    
+                    // 실제 타격 로직은 더 이상 여기서 즉시 발생하지 않습니다.
+                    // 애니메이션 에디터에서 발이 뻗어지는 프레임에 OnKickHitEvent() 이벤트를 달아주세요.
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// [Animation Event] 발차기 애니메이션에서 발이 뻗어지는 정확한 타이밍에 호출할 메서드.
+    /// 애니메이션 모델의 AnimationEventForwarder 등을 통해 호출되어야 합니다.
+    /// </summary>
+    public void OnKickHitEvent()
+    {
+        Vector3 origin = _hub.transform.position + Vector3.up;
+        if (Physics.SphereCast(origin, kickRadius, _hub.transform.forward, out RaycastHit hit, kickRange))
+        {
+            var ragdoll = hit.collider.GetComponentInParent<EnemyRagdollHandler>();
+            if (ragdoll != null)
+            {
+                Rigidbody hitBone = hit.collider.attachedRigidbody;
+                // ForceMode.VelocityChange를 사용하여 질량 무시하고 공처럼 시원하게 날려보냄
+                ragdoll.ApplyHit(hit.point, _hub.transform.forward, kickForce, hitBone);
+                
+                // 타격 성공 시 카메라 킥 주스(흔들림/Z축 회전) 발동
+                if (_hub.juiceController != null)
+                {
+                    _hub.juiceController.TriggerKickJuice();
                 }
             }
         }
@@ -289,9 +339,43 @@ public sealed class PlayerAnimatorHandler
 
     public void TriggerJump()
     {
-        if (animator != null)
+        SyncSetTrigger(hashTriggerJump);
+    }
+
+    // ── 몸체 다중 모델(부모/자식 World Model) Animation Sync Helpers ──
+    private void SyncSetTrigger(int hash)
+    {
+        if (bodyAnimators == null) return;
+        foreach (var anim in bodyAnimators)
         {
-            animator.SetTrigger(hashTriggerJump);
+            if (anim != null && anim.isActiveAndEnabled) anim.SetTrigger(hash);
+        }
+    }
+    
+    private void SyncSetBool(int hash, bool value)
+    {
+        if (bodyAnimators == null) return;
+        foreach (var anim in bodyAnimators)
+        {
+            if (anim != null && anim.isActiveAndEnabled) anim.SetBool(hash, value);
+        }
+    }
+
+    private void SyncSetInteger(int hash, int value)
+    {
+        if (bodyAnimators == null) return;
+        foreach (var anim in bodyAnimators)
+        {
+            if (anim != null && anim.isActiveAndEnabled) anim.SetInteger(hash, value);
+        }
+    }
+
+    private void SyncSetFloat(int hash, float value)
+    {
+        if (bodyAnimators == null) return;
+        foreach (var anim in bodyAnimators)
+        {
+            if (anim != null && anim.isActiveAndEnabled) anim.SetFloat(hash, value);
         }
     }
 }

@@ -15,15 +15,7 @@ public sealed class PlayerRamp
     [Tooltip("이 각도(°) 이상이면 '경사로'로 판정합니다.")]
     public float minSlopeAngle = 5f;
 
-    [Tooltip("이 각도(°) 이상이면 '급경사'로 판정하여 보행 패널티를 적용합니다.")]
-    public float steepSlopeAngle = 45f;
-
-    [Header("Walking Mode — 경사면 안정 보행")]
-    [Tooltip("경사면에 캐릭터를 밀착시키는 하향 부착력 (Acceleration).")]
-    public float slopeStickForce = 20f;
-
-    [Tooltip("급경사(steepSlopeAngle 이상) 보행 시 속도 배율. 0.5 = 절반 속도.")]
-    public float steepWalkPenalty = 0.5f;
+    // 서스펜션 시스템 도입으로 걷기 모드 부착력 변수 제거
 
     [Header("Sliding Mode — 경사면 내리막 가속")]
     [Tooltip("경사면 내리막 방향 가속력 (Acceleration).")]
@@ -100,61 +92,17 @@ public sealed class PlayerRamp
     /// FixedUpdate에서 메인 모듈(Movement/Slider) 실행 후 호출.
     /// 경사면 위가 아니면 즉시 리턴합니다.
     /// </summary>
-    /// <param name="jumpIntended">이번 프레임에 점프가 예정되어 있는지. true이면 부착력을 비활성화합니다.</param>
     public void FixedUpdateModule(bool jumpIntended)
     {
         if (!IsOnRamp) return;
 
-        if (!_hub.slider.IsSliding)
-        {
-            ApplyWalkingMode(jumpIntended);
-        }
-        else
+        if (_hub.slider.IsSliding)
         {
             ApplySlidingMode();
         }
     }
 
-    /// <summary>
-    /// PlayerMovement가 targetSpeed 계산 시 곱할 배율.
-    /// 급경사(steepSlopeAngle 이상)이면 steepWalkPenalty, 아니면 1.0.
-    /// </summary>
-    public float GetWalkSpeedMultiplier()
-    {
-        if (IsOnRamp && SlopeAngle >= steepSlopeAngle)
-            return steepWalkPenalty;
-        return 1f;
-    }
 
-    /// <summary>
-    /// 걷기 모드: 중력 비활성화 + 부착력 + 속도 경사면 투영.
-    /// "투명 경사로지만 미끄러지지 않고 일반 계단처럼 걷기."
-    /// </summary>
-    private void ApplyWalkingMode(bool jumpIntended)
-    {
-        // 1. 중력 OFF → 경사면에서 미끄러지지 않음
-        _hub.Rb.useGravity = false;
-
-        // 2. 부착력: 점프 의도가 없을 때만 적용 (무거운 점프 방지)
-        if (!jumpIntended)
-        {
-            _hub.Rb.AddForce(-_hub.movement.GroundNormal * slopeStickForce,
-                             ForceMode.Acceleration);
-        }
-
-        // 3. 현재 속도를 경사면 평면에 투영 (계단처럼 걷기)
-        Vector3 vel = _hub.Rb.linearVelocity;
-        Vector3 projectedVel = Vector3.ProjectOnPlane(vel, _hub.movement.GroundNormal);
-
-        // 원래 XZ 평면 속력을 유지하면서 경사면 방향으로 정렬
-        float originalSpeed = new Vector3(vel.x, 0f, vel.z).magnitude;
-        if (projectedVel.sqrMagnitude > 0.001f)
-        {
-            projectedVel = projectedVel.normalized * originalSpeed;
-        }
-
-        _hub.Rb.linearVelocity = projectedVel;
-    }
 
     /// <summary>
     /// 슬라이딩 모드: 중력 활성화 + 내리막 AddForce 가속 + 최대 속도 캡.

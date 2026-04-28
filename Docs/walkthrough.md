@@ -1,1 +1,220 @@
-🏃‍♂️ 1인칭 파쿠르 액션: 이동 역학 및 '게임 필(Game Feel)' 설계 기술서📌 서론: 기만(Trick)의 예술과 게임 필1인칭 파쿠르 액션에서 플레이어가 느끼는 압도적인 속도감과 쾌감은 뉴턴의 운동 법칙을 엄격하게 시뮬레이션한 결과가 아닙니다. 현실의 생체역학을 그대로 적용하면 뻣뻣하고 불쾌한 조작감만 남게 됩니다.핵심 철학: 파쿠르 게임의 본질은 실제 물리 법칙의 재현이 아니라, 플레이어의 의도를 시각적·수학적으로 과장하여 **'과학적으로 보이게 만드는 합법적 기만'**에 있습니다. (Ref: Steve Swink, 『Game Feel』)엔진 내부의 엄격한 연산과 플레이어의 인지적 환상 사이의 간극을 메우기 위해, 본 문서는 공간 해석(Vector Math), 모멘텀 보존, 시각적 착시, 그리고 입력 보정 시스템의 기술적 토대를 정의합니다.1. 공간 지각과 모멘텀 보존: 벡터 수학 기반 벽면 주행 (Wall Running)단순한 충돌 판정을 넘어, 3차원 공간에서 스칼라와 벡터의 관계를 조율하는 선형대수학적 접근이 필요합니다.A. 지오메트리 감지와 진입 판정 (내적: Dot Product)Raycast/Collision 기반 법선 벡터(Normal Vector) 추출: 벽면이 바라보는 방향 확인.진입 필터링: 플레이어 이동 방향(Forward)과 벽면 법선 벡터의 내적($\vec{a} \cdot \vec{b}$) 연산.임계값(Threshold) 거부: 너무 직각으로 박치기하거나, 얕은 각도로 스칠 경우 벽 타기 진입을 거부하여 물리적 어색함 방지.B. 이동 방향 산출과 보정 (외적: Cross Product)방향 도출: 벽의 법선 벡터와 월드 상단 벡터(Vector3.Up)를 **외적(Cross Product)**하여 벽면과 지면에 평행한 '진행 방향 벡터' 도출.방향 보정: 외적의 특성상 방향이 180도 뒤집힐 수 있으므로, 도출된 벡터와 시선 방향의 내적이 음수일 경우 산출된 벡터에 $-1$을 곱해 진행 방향을 완벽히 동기화.💡 [참고] 타이탄폴 2(Titanfall 2) 벽면 주행 제약 설계매개변수기술적 제한설계적 의도 (통찰)타이머 (Timer)최대 1.75초 후 강제 이탈무한 벽 타기 차단, 지형지물의 연속적 활용(Chaining) 강제속도 상한 (Speed Cap)28~30 km/h 고정벽 차기(Wall Kick)를 통한 능동적 가속 유도재접촉 (Re-grab)고도가 낮아지거나 25도 이상 꺾일 때만 허용제자리 점프로 고도를 무한히 높이는 Exploit 원천 차단시각적 단서 (Tilt)카메라 틸트 및 손 뻗기 애니메이션UI 없이도 벽 타기 가능 상태를 플레이어 무의식에 전달벽 차기(Wall Kick)와 퍼스티(Firstie): 벽 접촉 후 5틱(약 0.083초) 이내, 혹은 1틱 만에 점프 시 마찰력을 무시하고 최대 속도 부스트 제공.2. 공중 기동력: 에어 스트레이핑 (Air Strafing)소스 엔진(Source Engine)의 유산으로, 공중에서 궤도를 통제하고 모멘텀을 증폭시키는 역설적 수학 공식입니다.A. 속도 제한 딜레마와 투영 속도 (Projected Velocity)단순히 총 속도(Magnitude)를 제한하면 점프 시 속도가 급감하고, 제한을 풀면 무한 가속 버그가 발생합니다.해법: 현재 속도 전체가 아닌, **'가속하려는 방향(Wish Direction)으로 투영된 현재 속도'**만을 가속 상한선($L$)과 비교합니다.$$v' = v + t \cdot a$$$$\text{Projection Magnitude} = |v| \cos(\theta)$$완전 가속 허용: 투영 속도 + 새 가속도 < $L$부분 가속 허용: 투영 속도 + 새 가속도 $\ge$ $L$ (상한선까지만 Clamp)가속 차단: 투영 속도 $\ge$ $L$ (입력 무시)B. 수학적 맹점을 이용한 모멘텀 증폭$\cos(90^\circ) = 0$의 마법: 이동 방향의 90도(측면)로 가속을 입력하면 투영 속도가 0이 됩니다.엔진은 "전방 속도가 0"이라고 착각하여 가속 상한선 제약을 풀고 가속 벡터를 온전히 더해버립니다. 이를 통해 궤도를 꺾음과 동시에 구심력처럼 모멘텀을 무한히 증폭시킬 수 있습니다.3. 지면 기동력: 슬라이딩과 마찰력(Friction) 제어운동 에너지를 지면 착지 시 상실하지 않기 위한 물리 엔진 조작 기법입니다.물리 재질 교체 (Dynamic Swapping):Default: 높은 마찰 계수 (관성 없는 즉각적 정지/가속)Sliding: 마찰 계수 0 할당 (착지 순간 관성 보존 및 빙판 역학 생성)빗면 지오메트리 보정 (Slope Detection): 레이캐스트를 통해 바닥 법선 벡터를 추출하여 경사도 판별.내리막: 중력 가속도의 수직 성분을 수평 속도에 더해 가속감 제공.오르막: 강제 역방향 힘(Force) 추가 및 속도 깎아내림으로 어색한 등반 방지.4. 절차적 공간 탐색: 뜀틀/볼팅 (Vaulting) 시스템수동 마커 배치 없이 실시간 지형을 분석하여 장애물을 극복하는 다중 감지 아키텍처입니다.A. 다중 레이캐스트 (Multi-Raycast) 분석전방 하단 (Forward Low): 벽의 존재와 진입 각도 확인.전방 상단 (Forward High): 벽의 끝(모서리) 존재 여부 판별 (허공 통과 시 승인).수직 하단 (Downward Height): 모서리의 정확한 절대 고도(Y 좌표)와 턱(Ledge) 깊이 측정.B. 베지어 곡선(Bezier Curve)과 타겟 매칭볼팅 발동 시 물리 연산(Rigidbody) 일시 정지.4점 베지어 곡선 보간: 시작점 -> 수직 상승 앵커 -> 정점 -> 최종 안착 지점.타겟 매칭(Target Matching): 양손 IK를 추출된 모서리 좌표에 강제 고정하여 시각적 어색함(허공 짚기) 차단.5. 시각적 기만의 극치: 1인칭 카메라와 절차적 쥬스 (Juice)물리 연산이 완벽해도 1인칭 렌더링 피드백이 부족하면 조작감은 성립하지 않습니다.A. 카메라 릭(Camera Rig) 모델 3중 분리머리 뼈(Head Bone)에 카메라를 직접 부착하면 극심한 멀미를 유발합니다.1P View Model: 카메라 전용으로 부드럽게 애니메이팅된 팔/다리.Shadow Caster Model: 전신 그림자 투사용 모델.3P World Model: 타인에게 보이는 멀티플레이/히트박스 전용 모델.B. 착시 조작 연출 (Procedural Bobbing & FOV)카메라 틸트 (Roll): 벽 타기 시 반대 방향으로 10~15도 선형 보간(Lerp).시야각 팽창 (FOV): 가속 시 FOV를 넓혀 렌즈 가장자리 왜곡을 유도, 실제 속도 수치 변동 없이 폭발적 가속감 제공.절차적 무기 흔들림 (Weapon Bobbing):수평 흔들림: 체중 이동 $\rightarrow$ $\sin(\text{time} \times \text{speed}) \times \text{amplitude}$수직 바운스: 하중 충격 $\rightarrow$ $\cos(\text{time} \times (\text{speed} \times 2))$ (수평 주기의 2배속 적용으로 양발 착지 임팩트 재현)6. 심리적 관대함: 코요테 타임과 점프 버퍼링기계적 정확성이 아닌 플레이어의 의도에 관대하게 반응하는 필수 보정 레이어입니다.코요테 타임 (Coyote Time - 지연 보정):플레이어가 절벽을 벗어나 물리적으로 허공에 뜬 상태라도, 약 0.1~0.2초의 유예 시간 타이머 동안은 지면에 닿아있는 것으로 판정하여 점프를 승인. (시스템의 합법적 용서)점프 버퍼링 (Jump Buffering - 선입력 캐싱):착지 직전 공중에서 점프 키를 연타/유지할 경우, 해당 입력을 메모리에 캐싱.바닥에 닿는 찰나의 프레임에 캐싱된 점프를 즉각 강제 실행하여 조작 멈칫거림(Stutter) 방지.결론: 현대의 파쿠르 액션 게임 개발자는 엄격한 물리 법칙의 구현자가 아니라, 수치와 벡터를 통제하여 인간의 인지적 환상을 설계하는 **'예술적인 기만자(Trickster)'**가 되어야 합니다.
+핵심은 “층 생성기(Floor Generator)” + “빌딩 스택커(Stacker)”를 완전히 분리하는 것이다.
+여기서 필요한 건 복잡한 수학이 아니라, 좌표계 + 시드 기반 결정 함수 + 규칙 그래프다.
+
+아래를 그대로 설계하면 바로 에디터 툴로 옮길 수 있다.
+
+0. 전체 구조 (중요)
+툴 2개 구조
+① Floor Generator (1층 생성기)
+입력:
+seed
+grid size
+룸 규칙
+출력:
+1층 프리팹 (또는 GameObject 트리)
+② Building Stacker (층 적재기)
+입력:
+floor prefab
+total floors
+출력:
+다층 건물
+1. 핵심 수학: 좌표 시스템 (Grid → World)
+기본 공식
+Vector3 WorldPos(int x, int z, int yLevel)
+{
+    return new Vector3(
+        x * cellSize,
+        yLevel * floorHeight,
+        z * cellSize
+    );
+}
+의미
+x, z → 평면 배치
+yLevel → 층 번호
+cellSize → 타일 크기 (예: 4m)
+floorHeight → 층 높이 (예: 3.5~4m)
+
+👉 이거 하나로 모든 배치 해결됨
+
+2. 1층 생성 알고리즘 (Floor Generator)
+핵심: “룰 기반 타일 배치”
+Step 1: Grid 선언
+int width = 5;
+int height = 5;
+
+CellType[,] grid = new CellType[width, height];
+Step 2: 기본 구조 배치 (Deterministic)
+
+👉 이건 랜덤 아님 (항상 동일해야 플레이 가능)
+
+예:
+
+중앙 = 핵심 영역
+한쪽 = 계단
+grid[0, 2] = CellType.Stair;
+grid[2, 2] = CellType.Core;
+Step 3: 시드 기반 랜덤 (핵심)
+랜덤 초기화
+System.Random rng = new System.Random(seed);
+랜덤 규칙 (예시)
+방 / 복도 생성
+for (int x = 0; x < width; x++)
+{
+    for (int z = 0; z < height; z++)
+    {
+        if (grid[x, z] != CellType.Empty) continue;
+
+        int roll = rng.Next(0, 100);
+
+        if (roll < 60)
+            grid[x, z] = CellType.Room;
+        else
+            grid[x, z] = CellType.Hallway;
+    }
+}
+Step 4: 연결성 보장 (중요)
+
+👉 이거 없으면 맵 망함
+
+Flood Fill or BFS 사용
+시작점: Stair
+모든 타일 reachable 확인
+bool IsConnected()
+{
+    // BFS 돌려서 전부 방문 가능한지 체크
+}
+
+👉 실패하면:
+
+seed++;
+다시 생성
+3. 프리팹 배치 알고리즘
+셀 → 프리팹 매핑
+GameObject GetPrefab(CellType type)
+{
+    switch(type)
+    {
+        case CellType.Room: return roomPrefab;
+        case CellType.Hallway: return hallwayPrefab;
+        case CellType.Stair: return stairPrefab;
+    }
+}
+Instantiate 루프
+for (int x = 0; x < width; x++)
+{
+    for (int z = 0; z < height; z++)
+    {
+        var prefab = GetPrefab(grid[x,z]);
+
+        Vector3 pos = WorldPos(x, z, 0);
+
+        Instantiate(prefab, pos, Quaternion.identity, parent);
+    }
+}
+4. 계단 문제 (핵심 질문)
+
+맞다.
+계단은 큐브 스케일로 해결 못 한다.
+
+정답
+
+👉 계단은 “완성된 프리팹”으로 취급
+
+왜?
+경사각 중요
+플레이 테스트 필요
+파쿠르 타이밍 영향
+확장 설계
+enum StairType
+{
+    DogLeg,
+    Spiral,
+    Broken
+}
+StairType stair = (StairType)(rng.Next(0, 3));
+
+👉 층마다 계단 변형 가능
+
+5. 층 적재 알고리즘 (Stacker)
+핵심 공식
+for (int i = 0; i < totalFloors; i++)
+{
+    Vector3 pos = new Vector3(0, i * floorHeight, 0);
+
+    GameObject floor = Instantiate(floorPrefab, pos, Quaternion.identity);
+
+    SetFloorNumber(floor, i + 1);
+}
+6. 층수 텍스트 자동화
+void SetFloorNumber(GameObject floor, int level)
+{
+    var texts = floor.GetComponentsInChildren<TextMeshPro>();
+
+    foreach (var t in texts)
+    {
+        t.text = level + " F";
+    }
+}
+7. 시드 시스템 설계 (중요)
+핵심 개념
+
+👉 “층마다 시드 다르게”
+
+방법 1 (추천)
+int floorSeed = baseSeed + floorIndex;
+방법 2 (더 강력)
+int floorSeed = Hash(baseSeed, floorIndex);
+
+예:
+
+int Hash(int a, int b)
+{
+    return a * 73856093 ^ b * 19349663;
+}
+
+👉 결과:
+
+같은 baseSeed → 항상 같은 건물
+디버깅 가능
+8. 고급: 변형 규칙 (Replayability)
+1. 파괴 지점 랜덤
+if (rng.Next(0,100) < 20)
+    SpawnBrokenWall(x,z);
+2. 창문 위치
+if (IsEdge(x,z) && rng.Next(0,100) < 30)
+    SpawnWindow();
+3. 막힌 루트 생성
+if (rng.Next(0,100) < 15)
+    BlockStairAccess();
+9. 에디터 툴 구조 (실전)
+ScriptableObject 추천
+[CreateAssetMenu]
+class FloorConfig : ScriptableObject
+{
+    public int width;
+    public int height;
+    public float cellSize;
+    public float floorHeight;
+}
+에디터 버튼
+[ContextMenu("Generate Floor")]
+void GenerateFloor()
+[ContextMenu("Build Tower")]
+void BuildTower()
+10. 핵심 정리 (중요)
+❌ 잘못된 접근
+큐브로 모든 걸 해결하려는 것
+프로빌더 런타임 제어
+✅ 정답 구조
+프리팹 = “조각”
+Grid = “설계도”
+Seed = “변형”
+Loop = “생산라인”
+한 줄 요약
+
+👉 “좌표 = 산수, 구조 = 규칙, 다양성 = 시드”
+
+문제 (병목 현상): 1층에 프리팹 조각(방, 복도, 계단)이 25개 들어간다고 칩시다. 50층이면 1,250개의 개별 오브젝트(GameObject)가 생깁니다. 유니티는 이 1,250개의 조각을 화면에 그릴 때마다 그래픽 카드에 "이거 그려라"라고 1,250번의 명령(Draw Call)을 보냅니다. 최적화가 박살 납니다.
+
+해결책 (Static Batching): Stacker가 50층 건물을 다 만들고 난 직후, 코드로 생성된 모든 프리팹(방, 복도 외벽 등)의 속성을 isStatic = true로 묶어주거나, 유니티의 StaticBatchingUtility.Combine API를 호출하는 로직을 마지막 Step에 딱 한 줄 추가하십시오.
+이렇게 하면 1,250개의 조각이 그래픽 카드 입장에서는 '거대한 건물 덩어리 1개'로 인식되어, 프레임 저하 없이 쾌적한 파쿠르가 가능해집니다.

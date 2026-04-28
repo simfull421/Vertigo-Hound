@@ -27,13 +27,15 @@ public class PlayerController : MonoBehaviour
     public ViewmodelGunController gunController; // 인스펙터에서 연결
     [Header("Modules")]
     public PlayerMovement movement = new PlayerMovement();
-    public PlayerWallRunner wallRunner = new PlayerWallRunner();
+    public PlayerWallKick wallKick = new PlayerWallKick();
     public PlayerSlider slider = new PlayerSlider();
     public PlayerVault vault = new PlayerVault();
     public PlayerRamp ramp = new PlayerRamp();
     public PlayerAnimatorHandler animatorHandler = new PlayerAnimatorHandler();
     public PlayerWallTouchIK wallTouchIK = new PlayerWallTouchIK();
     public PlayerVaultIK vaultIK = new PlayerVaultIK();
+    public PlayerBreachModule breachModule = new PlayerBreachModule();
+    public PlayerInteractionModule interactModule = new PlayerInteractionModule();
    
     private bool _jumpIntended;
 
@@ -49,7 +51,7 @@ public class PlayerController : MonoBehaviour
         Cursor.visible = false;
 
         movement.Initialize(this);
-        wallRunner.Initialize(this);
+        wallKick.Initialize(this);
         slider.Initialize(this);
         vault.Initialize(this);
         ramp.Initialize(this);
@@ -76,6 +78,9 @@ public class PlayerController : MonoBehaviour
         if (worldModelAnimator == null)
             Debug.LogError("[PlayerController] worldModelAnimator가 연결되지 않았습니다! VaultIK가 동작하지 않습니다.");
         vaultIK.Initialize(this, worldModelAnimator);
+
+        breachModule.Initialize(this);
+        interactModule.Initialize(this);
 
         if (gunController != null) gunController.Initialize(this);
     }
@@ -115,7 +120,7 @@ public class PlayerController : MonoBehaviour
     void Update()
     {
         movement.UpdateModule();
-        wallRunner.UpdateModule();
+        wallKick.UpdateModule();
         slider.UpdateModule();
         vault.UpdateModule(); // Smart Reticle용 상시 감지 루프 작동
         ramp.UpdateModule();
@@ -123,6 +128,7 @@ public class PlayerController : MonoBehaviour
         wallTouchIK.UpdateModule();
         vaultIK.UpdateModule();
         gunController.UpdateModule();
+        interactModule.UpdateModule();
             
         if (InputProv.JumpTriggered)
         {
@@ -148,10 +154,6 @@ public class PlayerController : MonoBehaviour
         {
             // Vault는 내부 FixedUpdate 코루틴에서 전적으로 이동을 통제하므로 다른 모듈 로직을 배제합니다.
         }
-        else if (wallRunner.IsWallRunning)
-        {
-            wallRunner.FixedUpdateModule();
-        }
         else if (slider.IsSliding)
         {
             slider.FixedUpdateModule();
@@ -161,7 +163,7 @@ public class PlayerController : MonoBehaviour
             movement.FixedUpdateModule();
         }
 
-        if (!vault.IsVaulting && !wallRunner.IsWallRunning)
+        if (!vault.IsVaulting)
         {
             ramp.FixedUpdateModule(_jumpIntended);
         }
@@ -177,9 +179,9 @@ public class PlayerController : MonoBehaviour
                     return;
                 }
 
-                if (wallRunner.IsWallRunning)
+                if (wallKick.CanWallKick)
                 {
-                    wallRunner.HandleJump();
+                    wallKick.HandleJump();
                 }
                 else if (slider.IsSliding)
                 {

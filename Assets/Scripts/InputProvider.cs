@@ -14,6 +14,7 @@ public interface IInputProvider
     bool ReloadTriggered { get; }
     bool Weapon1Triggered { get; }
     bool Weapon2Triggered { get; }
+    bool InteractTriggered { get; }
     
     void Enable();
     void Disable();
@@ -32,6 +33,7 @@ public class StandardInputProvider : IInputProvider
     private InputAction reloadAction;
     private InputAction weapon1Action;
     private InputAction weapon2Action;
+    private InputAction interactAction;
 
     public Vector2 MoveInput => moveAction.ReadValue<Vector2>();
     public Vector2 LookInput => lookAction.ReadValue<Vector2>();
@@ -46,6 +48,7 @@ public class StandardInputProvider : IInputProvider
     public bool ReloadTriggered => reloadAction.WasPressedThisFrame();
     public bool Weapon1Triggered => weapon1Action.WasPressedThisFrame();
     public bool Weapon2Triggered => weapon2Action.WasPressedThisFrame();
+    public bool InteractTriggered => interactAction.WasPressedThisFrame();
 
     public StandardInputProvider()
     {
@@ -82,6 +85,9 @@ public class StandardInputProvider : IInputProvider
 
         weapon1Action = new InputAction("Weapon1", binding: "<Keyboard>/1");
         weapon2Action = new InputAction("Weapon2", binding: "<Keyboard>/2");
+
+        interactAction = new InputAction("Interact", binding: "<Gamepad>/buttonWest");
+        interactAction.AddBinding("<Keyboard>/e");
     }
 
     public void Enable()
@@ -97,6 +103,7 @@ public class StandardInputProvider : IInputProvider
         reloadAction.Enable();
         weapon1Action.Enable();
         weapon2Action.Enable();
+        interactAction.Enable();
     }
 
     public void Disable()
@@ -112,5 +119,6 @@ public class StandardInputProvider : IInputProvider
         reloadAction.Disable();
         weapon1Action.Disable();
         weapon2Action.Disable();
+        interactAction.Disable();
     }
 }

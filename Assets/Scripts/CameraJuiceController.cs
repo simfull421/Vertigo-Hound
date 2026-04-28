@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Rendering;
+using System.Collections.Generic;
 
 public class CameraJuiceController : MonoBehaviour
 {
@@ -11,7 +12,7 @@ public class CameraJuiceController : MonoBehaviour
     public Camera mainCamera; 
 
     [Header("Camera & FOV")]
-    public float baseFOV = 90f;
+    public float baseFOV = 68f;
 
     [Header("URP Post Processing")]
     public Volume postProcessingVolume;
@@ -22,14 +23,18 @@ public class CameraJuiceController : MonoBehaviour
 
     [Header("Modules (POCO)")]
     public JuiceSprint sprint = new JuiceSprint();
-    public JuiceWallRun wallRun = new JuiceWallRun();
+    public JuiceWallKick wallKick = new JuiceWallKick();
     public JuiceSlide slide = new JuiceSlide();
     public JuiceImpact impact = new JuiceImpact();
     public JuiceStrafeTilt strafeTilt = new JuiceStrafeTilt();
+    public JuiceHighVault highVault = new JuiceHighVault();
 
     private Vector3 _originalLocalPos;
     private Quaternion _originalLocalRot;
     
+    // 🚀 핵심: 현재 작동 중인 모듈만 모아두는 대기열
+    private HashSet<IJuiceModule> _activeModules = new HashSet<IJuiceModule>();
+
     void Awake()
     {
         if (positionPivot != null)
@@ -44,21 +49,45 @@ public class CameraJuiceController : MonoBehaviour
         }
             
         sprint.Initialize(this);
-        wallRun.Initialize(this);
+        wallKick.Initialize(this);
         slide.Initialize(this);
         impact.Initialize(this);
+        strafeTilt.Initialize(this);
     }
 
-    public void TriggerSlideStart(float dipAmount) => slide.TriggerSlideStart(dipAmount);
+    public void RegisterModule(IJuiceModule module)
+    {
+        _activeModules.Add(module);
+    }
+
+    public void UnregisterModule(IJuiceModule module)
+    {
+        _activeModules.Remove(module);
+    }
+
+    // ── 단발성 트리거 (이벤트-드리븐 방식으로 플레이어가 찌름) ──
+    public void TriggerSlideStart() => slide.TriggerSlideStart();
     public void TriggerSlideEnd(bool isJumpHop = false) => slide.TriggerSlideEnd(isJumpHop);
+    
+    public void TriggerWallKickJuice(float duration) => wallKick.TriggerWallKick(duration);
+
+    public void TriggerSprintStart() => sprint.TriggerSprint(true);
+    public void TriggerSprintStop() => sprint.TriggerSprint(false);
+    public void TriggerWalkStart() => sprint.TriggerWalk(true);
+    public void TriggerWalkStop() => sprint.TriggerWalk(false);
+    
+    public void TriggerStrafe(float inputX) => strafeTilt.TriggerStrafe(inputX);
+
     public void TriggerVaultJuice(float duration) => impact.TriggerVaultJuice(duration);
     public void TriggerLandingDrop(float intensity = 1f) => impact.TriggerLandingDrop(intensity);
     public void TriggerPulsingEffect(float duration) => impact.TriggerPulsingEffect(duration);
-    public void UpdateDescentShake(float airTime, float yVel) => impact.UpdateDescentShake(airTime, yVel);
+    public void TriggerBreachJuice(float duration) => impact.TriggerBreachJuice(duration);
     public void TriggerWallAttachJuice(bool isWallRight) => impact.TriggerPulsingEffect(0.15f);
-    public void TriggerSlideJumpPunch() => impact.TriggerSlideJumpPunch();
+    public void TriggerKickJuice() => impact.TriggerKickJuice();
     public void TriggerActiveLandingRoll() => impact.TriggerActiveLandingRoll();
     public void InterruptPulse() => impact.InterruptPulse();
+    
+    public void TriggerHighVaultJuice(float duration) => highVault.Trigger(this, duration);
 
     public void OnFootstepTriggered(string side)
     {
@@ -67,52 +96,31 @@ public class CameraJuiceController : MonoBehaviour
 
     void LateUpdate()
     {
-        if (mainCamera == null || positionPivot == null || player == null) return;
+        if (mainCamera == null || positionPivot == null) return;
 
-        // ── Step 1: 물리 상태 읽기 ──
-        Rigidbody rb = player.Rb;
-        float currentSpeed = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z).magnitude;
-        float speedRatio = Mathf.Clamp01(currentSpeed / player.movement.runMaxSpeed);
+        Vector3 totalPosOffset = Vector3.zero;
+        Vector3 totalRotOffset = Vector3.zero;
+        float maxFov = baseFOV;
+        float totalFovOffset = 0f;
 
-        // ── Step 2: 각 모듈 업데이트 ──
-        if (player.vault.IsVaulting || player.slider.IsSliding)
+        // 🚀 업그레이드 포인트: 쉬고 있는 모듈은 쳐다보지도 않음!
+        foreach (var module in _activeModules)
         {
-            sprint.UpdateModule(false, false, 0f, 0f);
-            wallRun.UpdateModule(false, false, 0f);
-        }
-        else if (player.wallRunner.IsWallRunning)
-        {
-            sprint.UpdateModule(false, false, 0f, 0f);
-            wallRun.UpdateModule(true, player.wallRunner.IsWallRight, speedRatio);
-        }
-        else
-        {
-            bool isSprinting = player.InputProv.DashHeld && currentSpeed > player.movement.walkSpeed;
-            bool isWalking = player.movement.IsGrounded && currentSpeed > 0.1f && !isSprinting;
-            bool isRunning = player.movement.IsGrounded && isSprinting;
-            sprint.UpdateModule(isWalking, isRunning, currentSpeed, player.movement.runMaxSpeed);
-            wallRun.UpdateModule(false, false, 0f);
+            totalPosOffset += module.PosOffset;
+            totalRotOffset += module.RotOffset;
+            
+            if (module.FovOverride > maxFov)
+            {
+                maxFov = module.FovOverride;
+            }
+            totalFovOffset += module.FovOffset;
         }
 
-        slide.UpdateModule();
-        impact.UpdateModule();
-
-        bool isStrafeTiltActive = !player.wallRunner.IsWallRunning && !player.vault.IsVaulting; 
-        strafeTilt.UpdateModule(player.InputProv.MoveInput.x, isStrafeTiltActive);
-
-        // ── Step 3: 완벽하게 분리된 다이렉트 대입 ──
-        // 수학 문서에 따라 이제 sprint.PosOffset에는 X축 진자 이동 수치도 포함되어 정상 적용됩니다.
-        Vector3 totalPosOffset = sprint.PosOffset + wallRun.PosOffset + slide.PosOffset + impact.PosOffset;
         positionPivot.localPosition = _originalLocalPos + totalPosOffset;
 
-        // 수학 문서에 따라 sprint.RotOffset.x 에 앞숙임(Pitch) 값이 정상 반영됩니다.
         Quaternion actionRot = (actionController != null) ? actionController.ActionRotation : Quaternion.identity;
-        Vector3 totalRotOffset = sprint.RotOffset + wallRun.RotOffset + slide.RotOffset + impact.RotOffset + strafeTilt.RotOffset;
         mainCamera.transform.localRotation = _originalLocalRot * actionRot * Quaternion.Euler(totalRotOffset);
 
-        // [FOV 적용]
-        float maxFov = Mathf.Max(sprint.FovOverride, wallRun.FovOverride, slide.FovOverride);
-        if (maxFov < baseFOV) maxFov = baseFOV;
-        mainCamera.fieldOfView = maxFov + impact.FovOffset;
+        mainCamera.fieldOfView = maxFov + totalFovOffset;
     }
 }

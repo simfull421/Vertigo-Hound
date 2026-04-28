@@ -167,7 +167,7 @@ public sealed class PlayerWallTouchIK
         Vector3 sideDir = isLeft ? -horizontalRight : horizontalRight;
 
         Ray ray = new Ray(shoulder.position, sideDir);
-        bool hitWall = Physics.SphereCast(ray, sphereCastRadius, out RaycastHit hit, maxTouchDistance, _hub.wallRunner.wallLayerMask);
+        bool hitWall = Physics.SphereCast(ray, sphereCastRadius, out RaycastHit hit, maxTouchDistance, _hub.wallKick.wallLayerMask);
 
         // ── Retract Delay: 벽을 보면 타임스탬프 갱신 ───────────────────────
         if (hitWall)

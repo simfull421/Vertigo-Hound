@@ -55,7 +55,7 @@ public class CameraActionController : MonoBehaviour
             selectedPattern = CameraRotationPattern.None;
         }
 
-        Debug.Log($"[CameraAction] Selected Pattern: {selectedPattern} / Apex Time: {apexTime:F2}s");
+       // Debug.Log($"[CameraAction] Selected Pattern: {selectedPattern} / Apex Time: {apexTime:F2}s");
 
         // 기존 코루틴 강제 종료
         if (currentActionCoroutine != null) StopCoroutine(currentActionCoroutine);
@@ -119,11 +119,7 @@ public class CameraActionController : MonoBehaviour
             ActionRotation = Quaternion.Euler(actualDescentPitch, 0f, 0f);
         }
 
-        // 공기저항 쉐이크 트리거
-        if (juiceController != null)
-        {
-            juiceController.UpdateDescentShake(airTime, fallSpeedVy);
-        }
+
     }
 
     public void ResetDescentPitch()
@@ -135,10 +131,6 @@ public class CameraActionController : MonoBehaviour
             resetCoroutine = StartCoroutine(ResetRotationSmoothly(0.15f));
         }
         
-        if (juiceController != null)
-        {
-            juiceController.UpdateDescentShake(0f, 0f); // 쉐이크 끄기
-        }
     }
 
     // 착지 등의 이유로 스무스하게 즉각 원상 복구 (조기 종료/가벼운 착지 시)
@@ -157,8 +149,6 @@ public class CameraActionController : MonoBehaviour
         resetCoroutine = StartCoroutine(ResetRotationSmoothly(0.15f));
         descentLookTimer = 0f;
         
-        if (juiceController != null) juiceController.UpdateDescentShake(0f, 0f);
-
         Debug.Log("[CameraAction] Interrupted! Resetting rotation or stopping early action.");
     }
 
@@ -174,7 +164,6 @@ public class CameraActionController : MonoBehaviour
         
         if (juiceController != null)
         {
-            juiceController.UpdateDescentShake(0f, 0f);
             juiceController.TriggerLandingDrop();
             juiceController.TriggerPulsingEffect(0.4f); // 구르기 시간에 맞춘 펄스
         }
