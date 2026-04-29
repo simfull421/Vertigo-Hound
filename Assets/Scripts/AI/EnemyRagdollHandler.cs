@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 /// <summary>
 /// AI의 레그돌 전환 및 피격 처리를 담당합니다.
@@ -27,10 +28,16 @@ public class EnemyRagdollHandler : MonoBehaviour
     [Tooltip("비워두면 Awake에서 자식 오브젝트의 모든 Collider를 자동 수집합니다.")]
     public Collider[] ragdollColliders;
 
+    [Header("Partial Ragdoll")]
+    [Tooltip("부분 레그돌 유지 시간 (초)")]
+    public float partialRagdollDuration = 0.15f;
+
     private EnemyAI _enemyAI;
     private EnemyAnimatorController _animController;
     private Rigidbody _mainRb; // 루트 Rigidbody (EnemyAI에 붙어있는 것)
     private Coroutine _returnCoroutine;
+    private Coroutine _partialCoroutine;
+    private readonly Dictionary<Rigidbody, Joint> _jointCache = new Dictionary<Rigidbody, Joint>();
 
     /// <summary>풀 반납 요청 이벤트. AISpawnManager가 구독합니다.</summary>
     public System.Action<EnemyAI> OnReturnToPool;
@@ -52,6 +59,8 @@ public class EnemyRagdollHandler : MonoBehaviour
             ragdollColliders = GetComponentsInChildren<Collider>();
         }
 
+        CacheJoints();
+
         // 초기 상태: 레그돌 비활성화 (Kinematic)
         SetRagdollActive(false);
     }
@@ -65,6 +74,12 @@ public class EnemyRagdollHandler : MonoBehaviour
         {
             StopCoroutine(_returnCoroutine);
             _returnCoroutine = null;
+        }
+
+        if (_partialCoroutine != null)
+        {
+            StopCoroutine(_partialCoroutine);
+            _partialCoroutine = null;
         }
 
         SetRagdollActive(false);
@@ -85,16 +100,31 @@ public class EnemyRagdollHandler : MonoBehaviour
     /// <param name="hitDirection">피격 방향 (총구 → 타격점)</param>
     /// <param name="force">물리력 크기</param>
     /// <param name="hitBone">피격된 뼈의 Rigidbody (null이면 전체에 힘 적용)</param>
-    public void ApplyHit(Vector3 hitPoint, Vector3 hitDirection, float force, Rigidbody hitBone)
+    public void ApplyHit(Vector3 hitPoint, Vector3 hitDirection, float force, Rigidbody hitBone, bool fullRagdoll = true)
     {
         // 이미 사망 상태면 추가 힘만 적용
         if (_enemyAI.CurrentState == EnemyAI.EnemyState.Dead)
         {
-            if (hitBone != null)
-            {
-                hitBone.AddForce(hitDirection * force, ForceMode.Impulse);
-            }
+            ApplyForceToBone(hitBone, hitDirection, force, hitPoint);
             return;
+        }
+
+        if (!fullRagdoll)
+        {
+            if (hitBone == null) return;
+            ApplyPartialRagdoll(hitPoint, hitDirection, force, hitBone);
+            return;
+        }
+
+        ApplyFullRagdoll(hitPoint, hitDirection, force, hitBone);
+    }
+
+    private void ApplyFullRagdoll(Vector3 hitPoint, Vector3 hitDirection, float force, Rigidbody hitBone)
+    {
+        if (_partialCoroutine != null)
+        {
+            StopCoroutine(_partialCoroutine);
+            _partialCoroutine = null;
         }
 
         // 1. AI 이동 완전 정지
@@ -119,11 +149,26 @@ public class EnemyRagdollHandler : MonoBehaviour
         // 질량을 무시하고 즉각적인 속도를 부여해 로켓처럼 날아가는 현상 방지
         if (hitBone != null)
         {
-            hitBone.AddForce(hitDirection * force, ForceMode.VelocityChange);
+            ApplyForceToBone(hitBone, hitDirection, force, hitPoint);
         }
 
         // 5. 일정 시간 후 풀 반납
         _returnCoroutine = StartCoroutine(ReturnToPoolAfterDelay(ragdollDuration));
+    }
+
+    private void ApplyPartialRagdoll(Vector3 hitPoint, Vector3 hitDirection, float force, Rigidbody hitBone)
+    {
+        if (_partialCoroutine != null)
+        {
+            StopCoroutine(_partialCoroutine);
+            _partialCoroutine = null;
+        }
+
+        List<Rigidbody> partialBodies = GetPartialBodies(hitBone);
+        SetPartialRagdollActive(partialBodies, true);
+        ApplyForceToBone(hitBone, hitDirection, force, hitPoint);
+
+        _partialCoroutine = StartCoroutine(RecoverPartialRagdoll(partialBodies, partialRagdollDuration));
     }
 
     /// <summary>
@@ -139,12 +184,95 @@ public class EnemyRagdollHandler : MonoBehaviour
         }
 
         // 레그돌 콜라이더 활성/비활성
+        if (ragdollColliders == null) return;
         foreach (var col in ragdollColliders)
         {
             if (col == null) continue;
             // 루트의 CapsuleCollider는 건드리지 않음
             if (col.gameObject == gameObject) continue;
             col.enabled = active;
+        }
+    }
+
+    private void SetPartialRagdollActive(List<Rigidbody> bodies, bool active)
+    {
+        if (bodies == null) return;
+        HashSet<Rigidbody> bodySet = new HashSet<Rigidbody>(bodies);
+
+        foreach (var rb in bodies)
+        {
+            if (rb == null || rb == _mainRb) continue;
+            rb.isKinematic = !active;
+            rb.useGravity = active;
+        }
+
+        if (ragdollColliders == null) return;
+
+        foreach (var col in ragdollColliders)
+        {
+            if (col == null) continue;
+            if (col.gameObject == gameObject) continue;
+            if (col.attachedRigidbody != null && bodySet.Contains(col.attachedRigidbody))
+            {
+                col.enabled = active;
+            }
+        }
+    }
+
+    private List<Rigidbody> GetPartialBodies(Rigidbody hitBone)
+    {
+        HashSet<Rigidbody> bodies = new HashSet<Rigidbody>();
+        if (hitBone == null) return new List<Rigidbody>();
+
+        bodies.Add(hitBone);
+
+        if (_jointCache.TryGetValue(hitBone, out Joint joint) && joint.connectedBody != null)
+        {
+            bodies.Add(joint.connectedBody);
+        }
+
+        foreach (var rb in ragdollBodies)
+        {
+            if (rb == null || rb == _mainRb) continue;
+            if (_jointCache.TryGetValue(rb, out Joint rbJoint) && rbJoint.connectedBody == hitBone)
+            {
+                bodies.Add(rb);
+            }
+        }
+
+        return new List<Rigidbody>(bodies);
+    }
+
+    private IEnumerator RecoverPartialRagdoll(List<Rigidbody> bodies, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+
+        if (_enemyAI.CurrentState == EnemyAI.EnemyState.Dead) yield break;
+
+        SetPartialRagdollActive(bodies, false);
+        _partialCoroutine = null;
+    }
+
+    private void ApplyForceToBone(Rigidbody hitBone, Vector3 hitDirection, float force, Vector3 hitPoint)
+    {
+        if (hitBone == null) return;
+        // 질량과 무관한 즉각 속도 부여로 과도한 질량 차이를 완화
+        hitBone.AddForceAtPosition(hitDirection * force, hitPoint, ForceMode.VelocityChange);
+    }
+
+    private void CacheJoints()
+    {
+        _jointCache.Clear();
+        if (ragdollBodies == null) return;
+
+        foreach (var rb in ragdollBodies)
+        {
+            if (rb == null) continue;
+            Joint joint = rb.GetComponent<Joint>();
+            if (joint != null)
+            {
+                _jointCache[rb] = joint;
+            }
         }
     }
 

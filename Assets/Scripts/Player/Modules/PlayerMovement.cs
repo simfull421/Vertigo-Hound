@@ -30,6 +30,11 @@ public sealed class PlayerMovement
     public float maxPitchDown = 70f;
     private float xRotation = 0f;
 
+    [Header("Camera Recoil")]
+    [Tooltip("반동이 원상복구되는 속도")]
+    public float recoilReturnSpeed = 18f;
+    private float recoilOffset = 0f;
+
     [Header("Hover Suspension")]
     [Tooltip("캡슐 중심에서 바닥까지 띄울 목표 높이. 캡슐의 extents.y(보통 1)보다 커야 바닥에 닿지 않습니다.")]
     public float rideHeight = 1.2f;
@@ -177,13 +182,21 @@ public sealed class PlayerMovement
 
         xRotation -= mouseY;
         xRotation = Mathf.Clamp(xRotation, maxPitchUp, maxPitchDown);
+
+        recoilOffset = Mathf.Lerp(recoilOffset, 0f, Time.deltaTime * recoilReturnSpeed);
+        float finalPitch = Mathf.Clamp(xRotation + recoilOffset, maxPitchUp, maxPitchDown);
         
         if (cameraPitchPivot != null)
         {
-            cameraPitchPivot.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
+            cameraPitchPivot.localRotation = Quaternion.Euler(finalPitch, 0f, 0f);
         }
 
         _hub.transform.Rotate(Vector3.up * mouseX);
+    }
+
+    public void AddRecoilPitch(float pitchUp)
+    {
+        recoilOffset -= Mathf.Abs(pitchUp);
     }
 
     private void MovePlayer()

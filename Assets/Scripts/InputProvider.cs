@@ -11,6 +11,7 @@ public interface IInputProvider
     bool CrouchHeld { get; }
     bool AimHeld { get; }
     bool FireTriggered { get; }
+    bool FireHeld { get; }
     bool ReloadTriggered { get; }
     bool Weapon1Triggered { get; }
     bool Weapon2Triggered { get; }
@@ -45,6 +46,7 @@ public class StandardInputProvider : IInputProvider
     public bool CrouchHeld => crouchAction.IsPressed();
     public bool AimHeld => aimAction.IsPressed();
     public bool FireTriggered => fireAction.WasPressedThisFrame();
+    public bool FireHeld => fireAction.IsPressed();
     public bool ReloadTriggered => reloadAction.WasPressedThisFrame();
     public bool Weapon1Triggered => weapon1Action.WasPressedThisFrame();
     public bool Weapon2Triggered => weapon2Action.WasPressedThisFrame();
