@@ -66,8 +66,18 @@ public class CameraJuiceController : MonoBehaviour
     }
 
     // ── 단발성 트리거 (이벤트-드리븐 방식으로 플레이어가 찌름) ──
-    public void TriggerSlideStart() => slide.TriggerSlideStart();
-    public void TriggerSlideEnd(bool isJumpHop = false) => slide.TriggerSlideEnd(isJumpHop);
+    public void TriggerSlideStart()
+    {
+        sprint.Suppress(true);
+        slide.TriggerSlideStart();
+    }
+
+    public void TriggerSlideEnd(bool isJumpHop = false)
+    {
+        slide.TriggerSlideEnd(isJumpHop);
+        sprint.Suppress(false);
+        SyncSprintState();
+    }
     
     public void TriggerWallKickJuice(float duration) => wallKick.TriggerWallKick(duration);
 
@@ -92,6 +102,20 @@ public class CameraJuiceController : MonoBehaviour
     public void OnFootstepTriggered(string side)
     {
         sprint.TriggerStep(side); 
+    }
+
+    private void SyncSprintState()
+    {
+        if (player == null || player.Rb == null || player.movement == null || player.InputProv == null) return;
+
+        Vector3 currentXZVelocity = new Vector3(player.Rb.linearVelocity.x, 0f, player.Rb.linearVelocity.z);
+        float currentSpeed = currentXZVelocity.magnitude;
+
+        bool isSprinting = player.InputProv.DashHeld && currentSpeed > player.movement.walkSpeed;
+        bool isWalking = player.movement.IsGrounded && currentSpeed > 0.1f && !isSprinting;
+
+        sprint.TriggerSprint(isSprinting);
+        sprint.TriggerWalk(isWalking);
     }
 
     void LateUpdate()

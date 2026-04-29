@@ -41,6 +41,7 @@ public sealed class JuiceSprint : IJuiceModule
 
     private bool _isWalking = false;
     private bool _isRunning = false;
+    private bool _isSuppressed = false;
 
     private Coroutine _routine;
     private CameraJuiceController _hub;
@@ -54,20 +55,39 @@ public sealed class JuiceSprint : IJuiceModule
 
     public void TriggerWalk(bool active)
     {
+        if (_isSuppressed && active) return;
         _isWalking = active;
         EvaluateRoutine();
     }
 
     public void TriggerSprint(bool active)
     {
+        if (_isSuppressed && active) return;
         _isRunning = active;
         EvaluateRoutine();
     }
 
     public void TriggerStep(string side)
     {
+        if (_isSuppressed) return;
         _targetImpulseY = impactAmountY;
-        _targetImpulseZ = (side.ToLower() == "left" ? 1f : -1f) * impactTiltZ;
+        bool isLeft = string.Equals(side, "left", StringComparison.OrdinalIgnoreCase);
+        _targetImpulseZ = (isLeft ? 1f : -1f) * impactTiltZ;
+        EvaluateRoutine();
+    }
+
+    public void Suppress(bool suppress)
+    {
+        _isSuppressed = suppress;
+
+        if (suppress)
+        {
+            _isWalking = false;
+            _isRunning = false;
+            _targetImpulseY = 0f;
+            _targetImpulseZ = 0f;
+        }
+
         EvaluateRoutine();
     }
 
@@ -109,6 +129,15 @@ public sealed class JuiceSprint : IJuiceModule
             {
                 targetFreq = walkFrequency * multi;
                 targetAmpMult = 0.5f * multi;
+            }
+
+            if (_isSuppressed)
+            {
+                targetFreq = 0f;
+                targetAmpMult = 0f;
+                targetFov = _baseFov;
+                _targetImpulseY = 0f;
+                _targetImpulseZ = 0f;
             }
 
             _currentFrequency = Mathf.Lerp(_currentFrequency, targetFreq, Time.deltaTime * 8f);

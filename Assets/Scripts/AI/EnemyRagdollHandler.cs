@@ -32,11 +32,17 @@ public class EnemyRagdollHandler : MonoBehaviour
     [Tooltip("부분 레그돌 유지 시간 (초)")]
     public float partialRagdollDuration = 0.15f;
 
+    [Header("Hit Reaction Layer")]
+    [SerializeField] private int hitLayerIndex = 1;
+    [SerializeField] private float hitLayerFadeTime = 0.05f;
+
     private EnemyAI _enemyAI;
     private EnemyAnimatorController _animController;
     private Rigidbody _mainRb; // 루트 Rigidbody (EnemyAI에 붙어있는 것)
     private Coroutine _returnCoroutine;
     private Coroutine _partialCoroutine;
+    private Coroutine _hitLayerCoroutine;
+    private bool _isHitLayerValid = true;
     private readonly Dictionary<Rigidbody, Joint> _jointCache = new Dictionary<Rigidbody, Joint>();
 
     /// <summary>풀 반납 요청 이벤트. AISpawnManager가 구독합니다.</summary>
@@ -47,6 +53,13 @@ public class EnemyRagdollHandler : MonoBehaviour
         _enemyAI = GetComponent<EnemyAI>();
         _animController = GetComponent<EnemyAnimatorController>();
         _mainRb = GetComponent<Rigidbody>();
+
+        if (animator == null && _animController != null)
+        {
+            animator = _animController.animator;
+        }
+
+        ValidateHitLayer();
 
         // 레그돌 바디 자동 수집 (비어있을 경우)
         if (ragdollBodies == null || ragdollBodies.Length == 0)
@@ -82,6 +95,13 @@ public class EnemyRagdollHandler : MonoBehaviour
             _partialCoroutine = null;
         }
 
+        if (_hitLayerCoroutine != null)
+        {
+            StopCoroutine(_hitLayerCoroutine);
+            _hitLayerCoroutine = null;
+        }
+
+        ValidateHitLayer();
         SetRagdollActive(false);
     }
 
@@ -126,6 +146,11 @@ public class EnemyRagdollHandler : MonoBehaviour
             StopCoroutine(_partialCoroutine);
             _partialCoroutine = null;
         }
+        if (_hitLayerCoroutine != null)
+        {
+            StopCoroutine(_hitLayerCoroutine);
+            _hitLayerCoroutine = null;
+        }
 
         // 1. AI 이동 완전 정지
         Vector3 inertiaVelocity = _enemyAI.CurrentVelocity;
@@ -167,6 +192,12 @@ public class EnemyRagdollHandler : MonoBehaviour
         List<Rigidbody> partialBodies = GetPartialBodies(hitBone);
         SetPartialRagdollActive(partialBodies, true);
         ApplyForceToBone(hitBone, hitDirection, force, hitPoint);
+
+        if (_hitLayerCoroutine != null)
+        {
+            StopCoroutine(_hitLayerCoroutine);
+        }
+        _hitLayerCoroutine = StartCoroutine(SuppressHitLayer(partialRagdollDuration));
 
         _partialCoroutine = StartCoroutine(RecoverPartialRagdoll(partialBodies, partialRagdollDuration));
     }
@@ -251,6 +282,60 @@ public class EnemyRagdollHandler : MonoBehaviour
 
         SetPartialRagdollActive(bodies, false);
         _partialCoroutine = null;
+    }
+
+    private IEnumerator SuppressHitLayer(float duration)
+    {
+        if (animator == null || !_isHitLayerValid) yield break;
+
+        float startWeight = animator.GetLayerWeight(hitLayerIndex);
+        float fadeTime = Mathf.Max(0f, hitLayerFadeTime);
+
+        if (fadeTime <= 0f)
+        {
+            animator.SetLayerWeight(hitLayerIndex, 0f);
+            yield return new WaitForSeconds(duration);
+            animator.SetLayerWeight(hitLayerIndex, startWeight);
+            _hitLayerCoroutine = null;
+            yield break;
+        }
+
+        float t = 0f;
+        while (t < fadeTime)
+        {
+            t += Time.deltaTime;
+            animator.SetLayerWeight(hitLayerIndex, Mathf.Lerp(startWeight, 0f, t / fadeTime));
+            yield return null;
+        }
+
+        yield return new WaitForSeconds(duration);
+
+        t = 0f;
+        while (t < fadeTime)
+        {
+            t += Time.deltaTime;
+            animator.SetLayerWeight(hitLayerIndex, Mathf.Lerp(0f, startWeight, t / fadeTime));
+            yield return null;
+        }
+
+        _hitLayerCoroutine = null;
+    }
+
+    private void ValidateHitLayer()
+    {
+        _isHitLayerValid = true;
+
+        if (animator == null)
+        {
+            _isHitLayerValid = false;
+            return;
+        }
+
+        if (hitLayerIndex < 0 || hitLayerIndex >= animator.layerCount)
+        {
+            _isHitLayerValid = false;
+            Debug.LogWarning($"[EnemyRagdollHandler] Hit layer index {hitLayerIndex} is out of range for {gameObject.name}.");
+        }
     }
 
     private void ApplyForceToBone(Rigidbody hitBone, Vector3 hitDirection, float force, Vector3 hitPoint)

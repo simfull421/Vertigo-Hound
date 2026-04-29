@@ -71,6 +71,8 @@ public sealed class JuiceSlide : IJuiceModule
             _slideRoutine = null;
         }
 
+        RotOffset = new Vector3(RotOffset.x, RotOffset.y, 0f);
+
         if (_standUpDipCoroutine != null) _hub.StopCoroutine(_standUpDipCoroutine);
         _standUpDipCoroutine = _hub.StartCoroutine(StandUpDipRoutine(isJumpHop));
         EvaluateActiveState();
@@ -80,6 +82,16 @@ public sealed class JuiceSlide : IJuiceModule
     {
         while (true)
         {
+            if (_hub.player != null && _hub.player.slider != null && !_hub.player.slider.IsSliding && _hub.player.slider.IsCrouching)
+            {
+                PosOffset = Vector3.zero;
+                RotOffset = Vector3.zero;
+                FovOverride = _hub.baseFOV;
+                _slideRoutine = null;
+                EvaluateActiveState();
+                yield break;
+            }
+
             float targetPosDrop = 0f;
             Vector3 targetPos = Vector3.zero;
 
