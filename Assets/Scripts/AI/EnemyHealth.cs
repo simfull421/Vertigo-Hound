@@ -28,6 +28,10 @@ public class EnemyHealth : MonoBehaviour
     /// </summary>
     public bool TakeHit(float damage, Vector3 hitPoint, Vector3 hitDir, Rigidbody hitRb)
     {
+        _ = hitPoint;
+        _ = hitDir;
+        _ = hitRb;
+
         if (_isDead) return false;
 
         currentHealth -= damage;

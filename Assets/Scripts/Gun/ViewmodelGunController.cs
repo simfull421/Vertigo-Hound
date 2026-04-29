@@ -55,6 +55,7 @@ public class ViewmodelGunController : MonoBehaviour
     [Header("Tracer")]
     public LineRenderer tracerPrefab;
     public int tracerPoolSize = 12;
+    public int tracerMaxPoolSize = 24;
     public float tracerDuration = 0.05f;
     public Transform tracerOrigin;
 
@@ -75,6 +76,7 @@ public class ViewmodelGunController : MonoBehaviour
     private Vector3 _recoilTargetRot;
     private Vector3 _recoilCurrentRot;
     private readonly Queue<LineRenderer> _tracerPool = new Queue<LineRenderer>();
+    private int _tracerInstanceCount = 0;
 
     // [수정] Fire 해시는 이제 애니메이터에서 안 쓰므로 지웠습니다.
     private readonly int hashReload = Animator.StringToHash("TriggerReload");
@@ -256,6 +258,7 @@ public class ViewmodelGunController : MonoBehaviour
             }
             else if (ragdoll != null)
             {
+                // EnemyHealth가 없을 경우 레거시 처리: 즉시 풀 레그돌
                 ragdoll.ApplyHit(hit.point, shootDirection, totalForce, hitBone, true);
             }
         }
@@ -282,6 +285,7 @@ public class ViewmodelGunController : MonoBehaviour
     {
         if (hitCollider == null) return HitZone.Body;
 
+        // 태그 우선 판정, 미설정 시 이름 기반 폴백
         string tag = hitCollider.tag;
         if (tag == "Head") return HitZone.Head;
         if (tag == "Body") return HitZone.Body;
@@ -297,12 +301,14 @@ public class ViewmodelGunController : MonoBehaviour
     {
         if (tracerPrefab == null || tracerPoolSize <= 0) return;
 
-        for (int i = 0; i < tracerPoolSize; i++)
+        int initialCount = Mathf.Min(tracerPoolSize, tracerMaxPoolSize);
+        for (int i = 0; i < initialCount; i++)
         {
             LineRenderer tracer = Instantiate(tracerPrefab, transform);
             tracer.gameObject.SetActive(false);
             _tracerPool.Enqueue(tracer);
         }
+        _tracerInstanceCount = initialCount;
     }
 
     private void SpawnTracer(Vector3 start, Vector3 end)
@@ -310,9 +316,11 @@ public class ViewmodelGunController : MonoBehaviour
         if (tracerPrefab == null) return;
         if (_tracerPool.Count == 0)
         {
+            if (_tracerInstanceCount >= tracerMaxPoolSize) return;
             LineRenderer extraTracer = Instantiate(tracerPrefab, transform);
             extraTracer.gameObject.SetActive(false);
             _tracerPool.Enqueue(extraTracer);
+            _tracerInstanceCount++;
         }
 
         LineRenderer tracer = _tracerPool.Dequeue();

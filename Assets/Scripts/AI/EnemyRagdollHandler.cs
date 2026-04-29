@@ -37,6 +37,7 @@ public class EnemyRagdollHandler : MonoBehaviour
     private Rigidbody _mainRb; // 루트 Rigidbody (EnemyAI에 붙어있는 것)
     private Coroutine _returnCoroutine;
     private Coroutine _partialCoroutine;
+    private readonly Dictionary<Rigidbody, Joint> _jointCache = new Dictionary<Rigidbody, Joint>();
 
     /// <summary>풀 반납 요청 이벤트. AISpawnManager가 구독합니다.</summary>
     public System.Action<EnemyAI> OnReturnToPool;
@@ -57,6 +58,8 @@ public class EnemyRagdollHandler : MonoBehaviour
         {
             ragdollColliders = GetComponentsInChildren<Collider>();
         }
+
+        CacheJoints();
 
         // 초기 상태: 레그돌 비활성화 (Kinematic)
         SetRagdollActive(false);
@@ -223,8 +226,7 @@ public class EnemyRagdollHandler : MonoBehaviour
 
         bodies.Add(hitBone);
 
-        Joint joint = hitBone.GetComponent<Joint>();
-        if (joint != null && joint.connectedBody != null)
+        if (_jointCache.TryGetValue(hitBone, out Joint joint) && joint.connectedBody != null)
         {
             bodies.Add(joint.connectedBody);
         }
@@ -232,8 +234,7 @@ public class EnemyRagdollHandler : MonoBehaviour
         foreach (var rb in ragdollBodies)
         {
             if (rb == null || rb == _mainRb) continue;
-            Joint rbJoint = rb.GetComponent<Joint>();
-            if (rbJoint != null && rbJoint.connectedBody == hitBone)
+            if (_jointCache.TryGetValue(rb, out Joint rbJoint) && rbJoint.connectedBody == hitBone)
             {
                 bodies.Add(rb);
             }
@@ -256,6 +257,22 @@ public class EnemyRagdollHandler : MonoBehaviour
     {
         if (hitBone == null) return;
         hitBone.AddForceAtPosition(hitDirection * force, hitPoint, ForceMode.VelocityChange);
+    }
+
+    private void CacheJoints()
+    {
+        _jointCache.Clear();
+        if (ragdollBodies == null) return;
+
+        foreach (var rb in ragdollBodies)
+        {
+            if (rb == null) continue;
+            Joint joint = rb.GetComponent<Joint>();
+            if (joint != null)
+            {
+                _jointCache[rb] = joint;
+            }
+        }
     }
 
     private IEnumerator ReturnToPoolAfterDelay(float delay)
