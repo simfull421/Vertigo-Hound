@@ -40,8 +40,6 @@ public class ViewmodelGunController : MonoBehaviour
     public float recoilReturnSpeed = 10f; // 원래 자리로 돌아오는 속도
 
     [Header("Shotgun Settings")]
-    [Tooltip("한 번에 발사되는 산탄 수")]
-    public int pelletCount = 8;
     [Tooltip("집탄율 (높을수록 널리 퍼짐)")]
     public float spreadAngle = 0.05f;
     [Tooltip("샷건 전체의 밀어내는 힘")]
@@ -103,7 +101,7 @@ public class ViewmodelGunController : MonoBehaviour
     {
         if (_hub == null || _hub.animatorHandler.currentWeaponType != 1) return;
 
-        bool isFiring = _hub.InputProv.FireTriggered; 
+        bool isFiring = _hub.InputProv.FireHeld; 
         _isAiming = _hub.InputProv.AimHeld; 
         bool isReloadingInput = _hub.InputProv.ReloadTriggered; 
         Vector2 lookDelta = _hub.InputProv.LookInput; 
@@ -202,25 +200,18 @@ public class ViewmodelGunController : MonoBehaviour
         _recoilTargetPos += recoilKickPos;
         _recoilTargetRot += recoilKickRot;
 
-        // 샷건 전체 힘을 산탄 개수만큼 분산 (펠릿 하나당 힘)
-        float forcePerPellet = totalForce / pelletCount;
+        // 총구 방향(forward)에 랜덤한 퍼짐(Spread) 값 추가
+        Vector3 spread = UnityEngine.Random.insideUnitSphere * spreadAngle;
+        Vector3 shootDirection = (mainCameraTransform.forward + spread).normalized;
 
-        // 산탄 개수만큼 반복해서 레이캐스트 발사
-        for (int i = 0; i < pelletCount; i++)
+        if (Physics.Raycast(mainCameraTransform.position, shootDirection, out RaycastHit hit, range))
         {
-            // 총구 방향(forward)에 랜덤한 퍼짐(Spread) 값 추가
-            Vector3 spread = UnityEngine.Random.insideUnitSphere * spreadAngle;
-            Vector3 shootDirection = (mainCameraTransform.forward + spread).normalized;
-
-            if (Physics.Raycast(mainCameraTransform.position, shootDirection, out RaycastHit hit, range))
+            // AI 피격 처리: 맞은 뼈다귀에 물리력 적용
+            var ragdoll = hit.collider.GetComponentInParent<EnemyRagdollHandler>();
+            if (ragdoll != null)
             {
-                // AI 피격 처리: 각 펠릿마다 맞은 뼈다귀에 개별 물리력 적용
-                var ragdoll = hit.collider.GetComponentInParent<EnemyRagdollHandler>();
-                if (ragdoll != null)
-                {
-                    Rigidbody hitBone = hit.collider.attachedRigidbody;
-                    ragdoll.ApplyHit(hit.point, shootDirection, forcePerPellet, hitBone);
-                }
+                Rigidbody hitBone = hit.collider.attachedRigidbody;
+                ragdoll.ApplyHit(hit.point, shootDirection, totalForce, hitBone);
             }
         }
     }
