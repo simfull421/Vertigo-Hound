@@ -108,14 +108,8 @@ public class EnemyRagdollHandler : MonoBehaviour
 
         if (!fullRagdoll)
         {
-            if (hitBone == null)
-            {
-                ApplyFullRagdoll(hitPoint, hitDirection, force, hitBone);
-            }
-            else
-            {
-                ApplyPartialRagdoll(hitPoint, hitDirection, force, hitBone);
-            }
+            if (hitBone == null) return;
+            ApplyPartialRagdoll(hitPoint, hitDirection, force, hitBone);
             return;
         }
 
