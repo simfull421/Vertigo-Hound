@@ -283,7 +283,11 @@ public class EnemyRagdollHandler : MonoBehaviour
     private IEnumerator SuppressHitLayer(float duration)
     {
         if (animator == null) yield break;
-        if (hitLayerIndex < 0 || hitLayerIndex >= animator.layerCount) yield break;
+        if (hitLayerIndex < 0 || hitLayerIndex >= animator.layerCount)
+        {
+            Debug.LogWarning($"[EnemyRagdollHandler] Hit layer index {hitLayerIndex} is out of range for {gameObject.name}.");
+            yield break;
+        }
 
         float startWeight = animator.GetLayerWeight(hitLayerIndex);
         float fadeTime = Mathf.Max(0f, hitLayerFadeTime);

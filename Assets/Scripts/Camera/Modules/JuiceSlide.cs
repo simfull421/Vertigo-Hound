@@ -82,7 +82,7 @@ public sealed class JuiceSlide : IJuiceModule
     {
         while (true)
         {
-            if (_hub.player != null && !_hub.player.slider.IsSliding)
+            if (_hub.player != null && !_hub.player.slider.IsSliding && _hub.player.slider.IsCrouching)
             {
                 PosOffset = Vector3.zero;
                 RotOffset = Vector3.zero;
