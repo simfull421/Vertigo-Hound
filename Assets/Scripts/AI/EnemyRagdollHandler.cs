@@ -1,17 +1,15 @@
 using UnityEngine;
 using System.Collections;
-using System.Collections.Generic;
 
 /// <summary>
 /// AI의 레그돌 전환 및 피격 처리를 담당합니다.
 /// 
 /// [설계 핵심]
-/// - 샷건 피격 시: 피격 부위의 Rigidbody에 총 방향 힘 적용
-/// - 나머지 부위: 달려오던 관성(CurrentVelocity) 보존
-/// - 결과: 비대칭적이고 역동적인 레그돌 연출
+/// - 피격 부위에 즉시 힘(Impulse)을 적용
+/// - 사망 시 이동/애니메이션 비활성화 후 물리 관성만 전달
 /// 
 /// [풀 반납 사이클]
-/// ApplyHit() → 레그돌 활성화 → 일정 시간 대기 → ReturnToPool 이벤트 발동
+/// ApplyHit() → 일정 시간 대기 → ReturnToPool 이벤트 발동
 /// </summary>
 public class EnemyRagdollHandler : MonoBehaviour
 {
@@ -21,34 +19,13 @@ public class EnemyRagdollHandler : MonoBehaviour
     public float ragdollDuration = 3f;
 
     [Header("Ragdoll Bodies (자동 수집 또는 수동 할당)")]
-    [Tooltip("비워두면 Awake에서 자식 오브젝트의 모든 Rigidbody를 자동 수집합니다.")]
+    [Tooltip("비워두면 Awake에서 자식 오브젝트의 모든 Rigidbody를 자동 수집합니다. (Active Ragdoll은 본 Rigidbody가 비-키네마틱 상태여야 합니다.)")]
     public Rigidbody[] ragdollBodies;
-
-    [Header("Ragdoll Colliders")]
-    [Tooltip("비워두면 Awake에서 자식 오브젝트의 모든 Collider를 자동 수집합니다.")]
-    public Collider[] ragdollColliders;
-
-    [Header("Partial Ragdoll")]
-    [Tooltip("부분 레그돌 유지 시간 (초)")]
-    public float partialRagdollDuration = 0.15f;
-    [Tooltip("부분 레그돌 복구 블렌딩 시간 (초)")]
-    [SerializeField] private float partialRecoveryBlendTime = 0.1f;
-
-    [Header("Hit Reaction Layer")]
-    [SerializeField] private int hitLayerIndex = 1;
-    [SerializeField] private float hitLayerFadeTime = 0.05f;
 
     private EnemyAI _enemyAI;
     private EnemyAnimatorController _animController;
     private Rigidbody _mainRb; // 루트 Rigidbody (EnemyAI에 붙어있는 것)
     private Coroutine _returnCoroutine;
-    private Coroutine _partialCoroutine;
-    private Coroutine _hitLayerCoroutine;
-    private bool _isHitLayerValid = true;
-    private readonly Dictionary<Rigidbody, Joint> _jointCache = new Dictionary<Rigidbody, Joint>();
-    private readonly HashSet<Rigidbody> _partialRagdollBodies = new HashSet<Rigidbody>();
-    private readonly Dictionary<Rigidbody, BlendState> _blendStates = new Dictionary<Rigidbody, BlendState>();
-    private readonly List<Rigidbody> _blendRemovalCache = new List<Rigidbody>();
 
     /// <summary>풀 반납 요청 이벤트. AISpawnManager가 구독합니다.</summary>
     public System.Action<EnemyAI> OnReturnToPool;
@@ -58,14 +35,11 @@ public class EnemyRagdollHandler : MonoBehaviour
         _enemyAI = GetComponent<EnemyAI>();
         _animController = GetComponent<EnemyAnimatorController>();
         _mainRb = GetComponent<Rigidbody>();
-        Collider rootCollider = GetComponent<Collider>();
 
         if (animator == null && _animController != null)
         {
             animator = _animController.animator;
         }
-
-        ValidateHitLayer();
 
         // 레그돌 바디 자동 수집 (비어있을 경우)
         if (ragdollBodies == null || ragdollBodies.Length == 0)
@@ -73,87 +47,13 @@ public class EnemyRagdollHandler : MonoBehaviour
             ragdollBodies = GetComponentsInChildren<Rigidbody>();
         }
 
-        if (ragdollColliders == null || ragdollColliders.Length == 0)
+        if (ragdollBodies != null)
         {
-            ragdollColliders = GetComponentsInChildren<Collider>();
-        }
-
-        CacheJoints();
-
-        // [중요] 루트 콜라이더와 레그돌 콜라이더 간의 충돌 무시 설정
-        // 캡슐 안에 레그돌 본들이 들어있으므로, 충격 시 서로 밀어내려다 뻣뻣하게 굳는 현상을 방지합니다.
-        if (rootCollider != null && ragdollColliders != null)
-        {
-            foreach (var col in ragdollColliders)
+            foreach (var rb in ragdollBodies)
             {
-                if (col != null && col != rootCollider)
-                {
-                    Physics.IgnoreCollision(rootCollider, col);
-                }
+                if (rb == null || rb == _mainRb) continue;
+                EnsureDynamicRigidbody(rb);
             }
-        }
-
-        // 초기 상태: 레그돌 비활성화 (Kinematic)
-        SetRagdollActive(false);
-    }
-
-    private void LateUpdate()
-    {
-        if (_partialRagdollBodies.Count == 0 && _blendStates.Count == 0) return;
-
-        if (_blendStates.Count > 0)
-        {
-            // 애니메이션 포즈를 먼저 확보한 뒤 물리 포즈를 덮어씌워 블렌딩 목표를 보존합니다.
-            foreach (var kvp in _blendStates)
-            {
-                BlendState state = kvp.Value;
-                if (state.Transform == null) continue;
-                state.TargetPosition = state.Transform.position;
-                state.TargetRotation = state.Transform.rotation;
-            }
-        }
-
-        if (_partialRagdollBodies.Count > 0)
-        {
-            foreach (var rb in _partialRagdollBodies)
-            {
-                if (rb == null) continue;
-                Transform boneTransform = rb.transform;
-                boneTransform.position = rb.position;
-                boneTransform.rotation = rb.rotation;
-            }
-        }
-
-        if (_blendStates.Count == 0) return;
-
-        float now = Time.time;
-        _blendRemovalCache.Clear();
-
-        foreach (var kvp in _blendStates)
-        {
-            BlendState state = kvp.Value;
-            if (state.Transform == null)
-            {
-                _blendRemovalCache.Add(kvp.Key);
-                continue;
-            }
-
-            float duration = state.Duration;
-            float t = duration <= 0f ? 1f : Mathf.Clamp01((now - state.StartTime) / duration);
-            Vector3 blendedPosition = Vector3.Lerp(state.StartPosition, state.TargetPosition, t);
-            Quaternion blendedRotation = Quaternion.Slerp(state.StartRotation, state.TargetRotation, t);
-            state.Transform.position = blendedPosition;
-            state.Transform.rotation = blendedRotation;
-
-            if (t >= 1f)
-            {
-                _blendRemovalCache.Add(kvp.Key);
-            }
-        }
-
-        foreach (var rb in _blendRemovalCache)
-        {
-            _blendStates.Remove(rb);
         }
     }
 
@@ -167,22 +67,6 @@ public class EnemyRagdollHandler : MonoBehaviour
             StopCoroutine(_returnCoroutine);
             _returnCoroutine = null;
         }
-
-        if (_partialCoroutine != null)
-        {
-            StopCoroutine(_partialCoroutine);
-            _partialCoroutine = null;
-        }
-
-        if (_hitLayerCoroutine != null)
-        {
-            StopCoroutine(_hitLayerCoroutine);
-            _hitLayerCoroutine = null;
-        }
-
-        ClearPartialRagdollState();
-        ValidateHitLayer();
-        SetRagdollActive(false);
     }
 
     /// <summary>
@@ -191,19 +75,19 @@ public class EnemyRagdollHandler : MonoBehaviour
     /// [동작 순서]
     /// 1. AI 이동 완전 정지 (EnemyAI.Disable)
     /// 2. Animator 비활성화
-    /// 3. 모든 본의 Rigidbody를 kinematic 해제 (레그돌 활성화)
-    /// 4. 모든 본에 기존 추적 관성(달려오던 속도) 적용
-    /// 5. 피격 부위에만 추가 물리력(힘) 적용
-    /// 6. 일정 시간 후 풀 반납
+    /// 3. 모든 본에 기존 추적 관성(달려오던 속도) 적용
+    /// 4. 피격 부위에만 추가 물리력(힘) 적용
+    /// 5. 일정 시간 후 풀 반납
     /// </summary>
     /// <param name="hitPoint">피격 지점 (월드 좌표)</param>
     /// <param name="hitDirection">피격 방향 (총구 → 타격점)</param>
     /// <param name="force">물리력 크기</param>
     /// <param name="hitBone">피격된 뼈의 Rigidbody (null이면 전체에 힘 적용)</param>
+    /// <param name="fullRagdoll">false면 이동/애니메이션은 유지하고 피격 임펄스만 적용합니다.</param>
     public void ApplyHit(Vector3 hitPoint, Vector3 hitDirection, float force, Rigidbody hitBone, bool fullRagdoll = true)
     {
         // 이미 사망 상태면 추가 힘만 적용
-        if (_enemyAI.CurrentState == EnemyAI.EnemyState.Dead)
+        if (_enemyAI != null && _enemyAI.CurrentState == EnemyAI.EnemyState.Dead)
         {
             ApplyForceToBone(hitBone, hitDirection, force, hitPoint);
             return;
@@ -211,8 +95,7 @@ public class EnemyRagdollHandler : MonoBehaviour
 
         if (!fullRagdoll)
         {
-            if (hitBone == null) return;
-            ApplyPartialRagdoll(hitPoint, hitDirection, force, hitBone);
+            ApplyForceToBone(hitBone, hitDirection, force, hitPoint);
             return;
         }
 
@@ -221,37 +104,34 @@ public class EnemyRagdollHandler : MonoBehaviour
 
     private void ApplyFullRagdoll(Vector3 hitPoint, Vector3 hitDirection, float force, Rigidbody hitBone)
     {
-        if (_partialCoroutine != null)
+        if (_returnCoroutine != null)
         {
-            StopCoroutine(_partialCoroutine);
-            _partialCoroutine = null;
+            StopCoroutine(_returnCoroutine);
+            _returnCoroutine = null;
         }
-        if (_hitLayerCoroutine != null)
-        {
-            StopCoroutine(_hitLayerCoroutine);
-            _hitLayerCoroutine = null;
-        }
-        ClearPartialRagdollState();
 
         // 1. AI 이동 완전 정지
-        Vector3 inertiaVelocity = _enemyAI.CurrentVelocity;
-        _enemyAI.Disable();
+        Vector3 inertiaVelocity = _enemyAI != null ? _enemyAI.CurrentVelocity : Vector3.zero;
+        if (_enemyAI != null)
+        {
+            _enemyAI.Disable();
+        }
 
         // 2. Animator 비활성화
         if (_animController != null) _animController.DisableAnimator();
 
-        // 3. 레그돌 활성화 + 관성 보존
-        SetRagdollActive(true);
-
-        foreach (var rb in ragdollBodies)
+        // 3. 기존 추적 관성 보존: 달려오던 방향의 속도를 각 본에 적용
+        if (ragdollBodies != null)
         {
-            if (rb == null || rb == _mainRb) continue;
-
-            // 기존 추적 관성 보존: 달려오던 방향의 속도를 각 본에 적용
-            rb.linearVelocity = inertiaVelocity;
+            foreach (var rb in ragdollBodies)
+            {
+                if (rb == null || rb == _mainRb) continue;
+                EnsureDynamicRigidbody(rb);
+                rb.linearVelocity = inertiaVelocity;
+            }
         }
 
-        // 4. 피격 부위에 샷건 충격 추가
+        // 4. 피격 부위에 충격 추가
         // 질량을 무시하고 즉각적인 속도를 부여해 로켓처럼 날아가는 현상 방지
         if (hitBone != null)
         {
@@ -262,258 +142,22 @@ public class EnemyRagdollHandler : MonoBehaviour
         _returnCoroutine = StartCoroutine(ReturnToPoolAfterDelay(ragdollDuration));
     }
 
-    private void ApplyPartialRagdoll(Vector3 hitPoint, Vector3 hitDirection, float force, Rigidbody hitBone)
-    {
-        if (_partialCoroutine != null)
-        {
-            StopCoroutine(_partialCoroutine);
-            _partialCoroutine = null;
-        }
-
-        List<Rigidbody> partialBodies = GetPartialBodies(hitBone);
-        RegisterPartialRagdollBodies(partialBodies);
-        SetPartialRagdollActive(partialBodies, true);
-        ApplyForceToBone(hitBone, hitDirection, force, hitPoint);
-
-        if (_hitLayerCoroutine != null)
-        {
-            StopCoroutine(_hitLayerCoroutine);
-        }
-        _hitLayerCoroutine = StartCoroutine(SuppressHitLayer(partialRagdollDuration));
-
-        _partialCoroutine = StartCoroutine(RecoverPartialRagdoll(partialBodies, partialRagdollDuration));
-    }
-
-    /// <summary>
-    /// 레그돌 본들의 kinematic 상태를 일괄 전환합니다.
-    /// </summary>
-    private void SetRagdollActive(bool active)
-    {
-        foreach (var rb in ragdollBodies)
-        {
-            if (rb == null || rb == _mainRb) continue; // 루트 Rigidbody는 EnemyAI가 관리
-            rb.isKinematic = !active;
-            rb.useGravity = active;
-            if (active)
-            {
-                rb.WakeUp();
-            }
-        }
-
-        // 레그돌 콜라이더 활성/비활성
-        if (ragdollColliders == null) return;
-        foreach (var col in ragdollColliders)
-        {
-            if (col == null) continue;
-            // 루트의 CapsuleCollider는 건드리지 않음
-            if (col.gameObject == gameObject) continue;
-            col.enabled = active;
-        }
-    }
-
-    private void SetPartialRagdollActive(List<Rigidbody> bodies, bool active)
-    {
-        if (bodies == null) return;
-        HashSet<Rigidbody> bodySet = new HashSet<Rigidbody>(bodies);
-
-        foreach (var rb in bodies)
-        {
-            if (rb == null || rb == _mainRb) continue;
-            rb.isKinematic = !active;
-            rb.useGravity = active;
-            if (active)
-            {
-                rb.WakeUp();
-            }
-        }
-
-        if (ragdollColliders == null) return;
-
-        foreach (var col in ragdollColliders)
-        {
-            if (col == null) continue;
-            if (col.gameObject == gameObject) continue;
-            if (col.attachedRigidbody != null && bodySet.Contains(col.attachedRigidbody))
-            {
-                col.enabled = active;
-            }
-        }
-    }
-
-    private List<Rigidbody> GetPartialBodies(Rigidbody hitBone)
-    {
-        HashSet<Rigidbody> bodies = new HashSet<Rigidbody>();
-        if (hitBone == null) return new List<Rigidbody>();
-
-        Dictionary<Rigidbody, List<Rigidbody>> childMap = BuildJointChildMap();
-        CollectPartialBodiesRecursive(hitBone, childMap, bodies);
-
-        return new List<Rigidbody>(bodies);
-    }
-
-    private IEnumerator RecoverPartialRagdoll(List<Rigidbody> bodies, float delay)
-    {
-        yield return new WaitForSeconds(delay);
-
-        if (_enemyAI.CurrentState == EnemyAI.EnemyState.Dead) yield break;
-
-        BeginPartialRecoveryBlend(bodies);
-        SetPartialRagdollActive(bodies, false);
-        _partialRagdollBodies.Clear();
-        _partialCoroutine = null;
-    }
-
-    private IEnumerator SuppressHitLayer(float duration)
-    {
-        if (animator == null || !_isHitLayerValid) yield break;
-
-        float startWeight = animator.GetLayerWeight(hitLayerIndex);
-        float fadeTime = Mathf.Max(0f, hitLayerFadeTime);
-
-        if (fadeTime <= 0f)
-        {
-            animator.SetLayerWeight(hitLayerIndex, 0f);
-            yield return new WaitForSeconds(duration);
-            animator.SetLayerWeight(hitLayerIndex, startWeight);
-            _hitLayerCoroutine = null;
-            yield break;
-        }
-
-        float t = 0f;
-        while (t < fadeTime)
-        {
-            t += Time.deltaTime;
-            animator.SetLayerWeight(hitLayerIndex, Mathf.Lerp(startWeight, 0f, t / fadeTime));
-            yield return null;
-        }
-
-        yield return new WaitForSeconds(duration);
-
-        t = 0f;
-        while (t < fadeTime)
-        {
-            t += Time.deltaTime;
-            animator.SetLayerWeight(hitLayerIndex, Mathf.Lerp(0f, startWeight, t / fadeTime));
-            yield return null;
-        }
-
-        _hitLayerCoroutine = null;
-    }
-
-    private void ValidateHitLayer()
-    {
-        _isHitLayerValid = true;
-
-        if (animator == null)
-        {
-            _isHitLayerValid = false;
-            return;
-        }
-
-        if (hitLayerIndex < 0 || hitLayerIndex >= animator.layerCount)
-        {
-            _isHitLayerValid = false;
-            Debug.LogWarning($"[EnemyRagdollHandler] Hit layer index {hitLayerIndex} is out of range for {gameObject.name}.");
-        }
-    }
-
     private void ApplyForceToBone(Rigidbody hitBone, Vector3 hitDirection, float force, Vector3 hitPoint)
     {
         if (hitBone == null) return;
         // 질량과 무관한 즉각 속도 부여로 과도한 질량 차이를 완화
+        EnsureDynamicRigidbody(hitBone);
         hitBone.WakeUp();
         hitBone.AddForceAtPosition(hitDirection * force, hitPoint, ForceMode.VelocityChange);
     }
 
-    private void RegisterPartialRagdollBodies(List<Rigidbody> bodies)
+    private void EnsureDynamicRigidbody(Rigidbody rb)
     {
-        _partialRagdollBodies.Clear();
-        if (bodies == null) return;
-
-        foreach (var rb in bodies)
+        if (rb == null) return;
+        if (rb.isKinematic)
         {
-            if (rb == null || rb == _mainRb) continue;
-            _partialRagdollBodies.Add(rb);
-            _blendStates.Remove(rb);
-        }
-    }
-
-    private void BeginPartialRecoveryBlend(List<Rigidbody> bodies)
-    {
-        if (bodies == null) return;
-        float duration = Mathf.Max(0f, partialRecoveryBlendTime);
-
-        foreach (var rb in bodies)
-        {
-            if (rb == null || rb == _mainRb) continue;
-            Transform boneTransform = rb.transform;
-            BlendState state = new BlendState
-            {
-                Transform = boneTransform,
-                StartPosition = boneTransform.position,
-                StartRotation = boneTransform.rotation,
-                StartTime = Time.time,
-                Duration = duration
-            };
-            _blendStates[rb] = state;
-        }
-    }
-
-    private void ClearPartialRagdollState()
-    {
-        _partialRagdollBodies.Clear();
-        _blendStates.Clear();
-        _blendRemovalCache.Clear();
-    }
-
-    private Dictionary<Rigidbody, List<Rigidbody>> BuildJointChildMap()
-    {
-        Dictionary<Rigidbody, List<Rigidbody>> childMap = new Dictionary<Rigidbody, List<Rigidbody>>();
-        if (ragdollBodies == null) return childMap;
-
-        foreach (var rb in ragdollBodies)
-        {
-            if (rb == null || rb == _mainRb) continue;
-            if (_jointCache.TryGetValue(rb, out Joint joint) && joint != null && joint.connectedBody != null)
-            {
-                if (!childMap.TryGetValue(joint.connectedBody, out List<Rigidbody> list))
-                {
-                    list = new List<Rigidbody>();
-                    childMap[joint.connectedBody] = list;
-                }
-                list.Add(rb);
-            }
-        }
-
-        return childMap;
-    }
-
-    private void CollectPartialBodiesRecursive(Rigidbody current, Dictionary<Rigidbody, List<Rigidbody>> childMap, HashSet<Rigidbody> bodies)
-    {
-        if (current == null || bodies.Contains(current)) return;
-        bodies.Add(current);
-
-        if (!childMap.TryGetValue(current, out List<Rigidbody> children)) return;
-
-        foreach (var child in children)
-        {
-            CollectPartialBodiesRecursive(child, childMap, bodies);
-        }
-    }
-
-    private void CacheJoints()
-    {
-        _jointCache.Clear();
-        if (ragdollBodies == null) return;
-
-        foreach (var rb in ragdollBodies)
-        {
-            if (rb == null) continue;
-            Joint joint = rb.GetComponent<Joint>();
-            if (joint != null)
-            {
-                _jointCache[rb] = joint;
-            }
+            rb.isKinematic = false;
+            rb.useGravity = true;
         }
     }
 
@@ -523,16 +167,5 @@ public class EnemyRagdollHandler : MonoBehaviour
 
         // 풀 반납 이벤트 발동
         OnReturnToPool?.Invoke(_enemyAI);
-    }
-
-    private class BlendState
-    {
-        public Transform Transform;
-        public Vector3 StartPosition;
-        public Quaternion StartRotation;
-        public Vector3 TargetPosition;
-        public Quaternion TargetRotation;
-        public float StartTime;
-        public float Duration;
     }
 }
