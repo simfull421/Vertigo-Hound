@@ -10,13 +10,13 @@ public class PlayerCrosshairHUD : MonoBehaviour
     
     [Header("Reticle Colors")]
     public Color normalColor = new Color(1f, 1f, 1f, 0.4f);
-    public Color vaultColor = new Color(1f, 0f, 0f, 1.0f); // 일반 Vault (Red)
-    public Color highVaultColor = new Color(0f, 1f, 1f, 1.0f); // 하이 Vault (Cyan/하늘색)
+    public Color vaultColor = new Color(1f, 0f, 0f, 1.0f); // Normal vault (red)
+    public Color highVaultColor = new Color(0f, 1f, 1f, 1.0f); // High vault (cyan)
   
     [Header("Reticle Scale")]
     public Vector3 normalScale = Vector3.one;
     public Vector3 vaultScale = new Vector3(1.4f, 1.4f, 1.4f);
-    public Vector3 highVaultScale = new Vector3(1.8f, 1.8f, 1.8f); // 틈새는 더 크게 강조
+    public Vector3 highVaultScale = new Vector3(1.8f, 1.8f, 1.8f); // Emphasize high vault more
     
     [Header("Crosshair Lines")]
     public Image lineUp;
@@ -65,12 +65,12 @@ public class PlayerCrosshairHUD : MonoBehaviour
         if (player == null || player.vault == null || _canvasGroup == null) return;
 
         bool canVault = player.vault.CanVault;
-        bool canHighVault = player.vault.CanHighVault; // 하이 볼트 상태 가져오기
+        bool canHighVault = player.vault.CanHighVault; // Read high vault state
 
         Color targetColor = normalColor;
         Vector3 targetScale = normalScale;
 
-        // 우선순위: 하이 볼트 > 일반 볼트
+        // Priority: high vault > normal vault
         if (canHighVault)
         {
             targetColor = highVaultColor;
@@ -85,7 +85,7 @@ public class PlayerCrosshairHUD : MonoBehaviour
         Color targetTint = new Color(targetColor.r, targetColor.g, targetColor.b, 1f);
         float targetAlpha = targetColor.a;
 
-        // 시각적 피드백 보간
+        // Visual feedback interpolation
         foreach (var line in _lineImages)
         {
             if (line == null) continue;
