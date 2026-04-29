@@ -89,8 +89,10 @@ public class EnemyRagdollHandler : MonoBehaviour
 
         if (_blendStates.Count > 0)
         {
-            foreach (var state in _blendStates.Values)
+            // 애니메이션 포즈를 먼저 확보한 뒤 물리 포즈를 덮어씌워 블렌딩 목표를 보존합니다.
+            foreach (var kvp in _blendStates)
             {
+                BlendState state = kvp.Value;
                 if (state.Transform == null) continue;
                 state.TargetPosition = state.Transform.position;
                 state.TargetRotation = state.Transform.rotation;
@@ -122,7 +124,7 @@ public class EnemyRagdollHandler : MonoBehaviour
                 continue;
             }
 
-            float duration = Mathf.Max(0f, state.Duration);
+            float duration = state.Duration;
             float t = duration <= 0f ? 1f : Mathf.Clamp01((now - state.StartTime) / duration);
             Vector3 blendedPosition = Vector3.Lerp(state.StartPosition, state.TargetPosition, t);
             Quaternion blendedRotation = Quaternion.Slerp(state.StartRotation, state.TargetRotation, t);
