@@ -19,7 +19,7 @@ public class EnemyRagdollHandler : MonoBehaviour
     public float ragdollDuration = 3f;
 
     [Header("Ragdoll Bodies (자동 수집 또는 수동 할당)")]
-    [Tooltip("비워두면 Awake에서 자식 오브젝트의 모든 Rigidbody를 자동 수집합니다.")]
+    [Tooltip("비워두면 Awake에서 자식 오브젝트의 모든 Rigidbody를 자동 수집합니다. (Active Ragdoll은 본 Rigidbody가 비-키네마틱 상태여야 합니다.)")]
     public Rigidbody[] ragdollBodies;
 
     private EnemyAI _enemyAI;
@@ -45,6 +45,19 @@ public class EnemyRagdollHandler : MonoBehaviour
         if (ragdollBodies == null || ragdollBodies.Length == 0)
         {
             ragdollBodies = GetComponentsInChildren<Rigidbody>();
+        }
+
+        if (ragdollBodies != null)
+        {
+            foreach (var rb in ragdollBodies)
+            {
+                if (rb == null || rb == _mainRb) continue;
+                if (rb.isKinematic)
+                {
+                    rb.isKinematic = false;
+                    rb.useGravity = true;
+                }
+            }
         }
     }
 
@@ -74,6 +87,7 @@ public class EnemyRagdollHandler : MonoBehaviour
     /// <param name="hitDirection">피격 방향 (총구 → 타격점)</param>
     /// <param name="force">물리력 크기</param>
     /// <param name="hitBone">피격된 뼈의 Rigidbody (null이면 전체에 힘 적용)</param>
+    /// <param name="fullRagdoll">false면 이동/애니메이션은 유지하고 피격 임펄스만 적용합니다.</param>
     public void ApplyHit(Vector3 hitPoint, Vector3 hitDirection, float force, Rigidbody hitBone, bool fullRagdoll = true)
     {
         // 이미 사망 상태면 추가 힘만 적용
