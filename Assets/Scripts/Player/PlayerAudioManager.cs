@@ -2,7 +2,7 @@ using UnityEngine;
 
 // 아까 만든 인터페이스를 상속받습니다. (계약 이행)
 [RequireComponent(typeof(AudioSource))]
-public class PlayerAudioManager : MonoBehaviour, IPlayerAudioService
+public class PlayerAudioManager : MonoBehaviour, IPlayerAudioService, IHitAudioService
 {
     [Header("Footstep Sounds (Kenney.nl 에셋 넣는 곳)")]
     public AudioClip[] leftFootsteps;
@@ -12,6 +12,11 @@ public class PlayerAudioManager : MonoBehaviour, IPlayerAudioService
     public float baseVolume = 0.2f; 
     [Tooltip("달릴 때 발소리가 얼마나 더 커질지 배율")]
     public float runVolumeMultiplier = 1.5f; 
+
+    [Header("Hit Sounds")]
+    public AudioClip bodyHitClip;
+    public AudioClip headshotClip;
+    public float hitVolume = 0.6f;
 
     // 중복 재생 방지용 타이머 변수 추가
     private float _lastFootstepTime = 0f;
@@ -48,6 +53,17 @@ public class PlayerAudioManager : MonoBehaviour, IPlayerAudioService
         // 약간의 피치(Pitch) 랜덤을 줘서 자연스러움 극대화
         _audioSource.pitch = UnityEngine.Random.Range(0.9f, 1.1f);
         _audioSource.PlayOneShot(clipToPlay, finalVolume);
+    }
+
+    public void PlayHitAudio(HitSfxType hitType)
+    {
+        if (_audioSource == null) return;
+
+        AudioClip clipToPlay = hitType == HitSfxType.Head ? headshotClip : bodyHitClip;
+        if (clipToPlay == null) return;
+
+        _audioSource.pitch = 1f;
+        _audioSource.PlayOneShot(clipToPlay, hitVolume);
     }
 
 }

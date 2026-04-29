@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 public class ViewmodelGunController : MonoBehaviour
 {
@@ -12,8 +13,10 @@ public class ViewmodelGunController : MonoBehaviour
     public int currentAmmo;
     public float fireRate = 0.2f;
     public float reloadTime = 1.5f;
-    public float damage = 25f;
+    public float damage = 10f;
+    public float headshotMultiplier = 2.5f;
     public float range = 100f;
+    public LayerMask hitMask = ~0;
     
     [Header("Auto-Align ADS (Dynamic)")]
     public Transform weaponRoot;       
@@ -39,11 +42,21 @@ public class ViewmodelGunController : MonoBehaviour
     public float recoilSnappiness = 20f;  // 반동이 튀어오르는 속도 (빠를수록 타격감 증가)
     public float recoilReturnSpeed = 10f; // 원래 자리로 돌아오는 속도
 
-    [Header("Shotgun Settings")]
+    [Header("Ballistics")]
     [Tooltip("집탄율 (높을수록 널리 퍼짐)")]
-    public float spreadAngle = 0.05f;
-    [Tooltip("샷건 전체의 밀어내는 힘")]
+    public float spreadAngle = 0.02f;
+    [Tooltip("피격 시 물리적 밀어내는 힘")]
     public float totalForce = 50f;
+
+    [Header("Camera Recoil")]
+    [Tooltip("사격 시 카메라 위로 튀는 각도")]
+    public float cameraRecoilPitch = 1.5f;
+
+    [Header("Tracer")]
+    public LineRenderer tracerPrefab;
+    public int tracerPoolSize = 12;
+    public float tracerDuration = 0.05f;
+    public Transform tracerOrigin;
 
     // 내부 상태 변수들
     private float _nextFireTime;
@@ -61,6 +74,7 @@ public class ViewmodelGunController : MonoBehaviour
     private Vector3 _recoilCurrentPos;
     private Vector3 _recoilTargetRot;
     private Vector3 _recoilCurrentRot;
+    private readonly Queue<LineRenderer> _tracerPool = new Queue<LineRenderer>();
 
     // [수정] Fire 해시는 이제 애니메이터에서 안 쓰므로 지웠습니다.
     private readonly int hashReload = Animator.StringToHash("TriggerReload");
@@ -95,6 +109,8 @@ public class ViewmodelGunController : MonoBehaviour
         _needsHipPoseCapture = true; // 다음 LateUpdate에서 Idle 포즈 확정 후 재캡처
 
         if (viewmodelCamera != null) _defaultFOV = viewmodelCamera.fieldOfView;
+
+        InitializeTracerPool();
     }
 
     public void UpdateModule()
@@ -200,20 +216,51 @@ public class ViewmodelGunController : MonoBehaviour
         _recoilTargetPos += recoilKickPos;
         _recoilTargetRot += recoilKickRot;
 
+        if (_hub != null)
+        {
+            _hub.movement.AddRecoilPitch(cameraRecoilPitch);
+        }
+
         // 총구 방향(forward)에 랜덤한 퍼짐(Spread) 값 추가
         Vector3 spread = UnityEngine.Random.insideUnitSphere * spreadAngle;
-        Vector3 shootDirection = (mainCameraTransform.forward + spread).normalized;
+        if (mainCameraTransform == null) return;
 
-        if (Physics.Raycast(mainCameraTransform.position, shootDirection, out RaycastHit hit, range))
+        Vector3 shootDirection = (mainCameraTransform.forward + spread).normalized;
+        Vector3 rayOrigin = mainCameraTransform.position;
+        Vector3 tracerEnd = rayOrigin + shootDirection * range;
+
+        if (Physics.Raycast(rayOrigin, shootDirection, out RaycastHit hit, range, hitMask, QueryTriggerInteraction.Ignore))
         {
-            // AI 피격 처리: 맞은 뼈다귀에 물리력 적용
-            var ragdoll = hit.collider.GetComponentInParent<EnemyRagdollHandler>();
-            if (ragdoll != null)
+            tracerEnd = hit.point;
+
+            HitZone hitZone = ResolveHitZone(hit.collider);
+            float finalDamage = damage * (hitZone == HitZone.Head ? headshotMultiplier : 1f);
+
+            EnemyHealth health = hit.collider.GetComponentInParent<EnemyHealth>();
+            EnemyRagdollHandler ragdoll = hit.collider.GetComponentInParent<EnemyRagdollHandler>();
+            Rigidbody hitBone = hit.collider.attachedRigidbody;
+
+            if (health != null)
             {
-                Rigidbody hitBone = hit.collider.attachedRigidbody;
-                ragdoll.ApplyHit(hit.point, shootDirection, totalForce, hitBone);
+                bool alive = health.TakeHit(finalDamage, hit.point, shootDirection, hitBone);
+
+                if (_hub != null && _hub.audioManager != null)
+                {
+                    _hub.audioManager.PlayHitAudio(hitZone == HitZone.Head ? HitSfxType.Head : HitSfxType.Body);
+                }
+
+                if (ragdoll != null)
+                {
+                    ragdoll.ApplyHit(hit.point, shootDirection, totalForce, hitBone, !alive);
+                }
+            }
+            else if (ragdoll != null)
+            {
+                ragdoll.ApplyHit(hit.point, shootDirection, totalForce, hitBone, true);
             }
         }
+
+        SpawnTracer(rayOrigin, tracerEnd);
     }
 
     private IEnumerator ReloadRoutine()
@@ -223,5 +270,68 @@ public class ViewmodelGunController : MonoBehaviour
         yield return new WaitForSeconds(reloadTime);
         currentAmmo = maxAmmo;
         _isReloading = false;
+    }
+
+    private enum HitZone
+    {
+        Body,
+        Head
+    }
+
+    private HitZone ResolveHitZone(Collider hitCollider)
+    {
+        if (hitCollider == null) return HitZone.Body;
+
+        string tag = hitCollider.tag;
+        if (tag == "Head") return HitZone.Head;
+        if (tag == "Body") return HitZone.Body;
+
+        string name = hitCollider.name.ToLowerInvariant();
+        if (name.Contains("head")) return HitZone.Head;
+        if (name.Contains("body")) return HitZone.Body;
+
+        return HitZone.Body;
+    }
+
+    private void InitializeTracerPool()
+    {
+        if (tracerPrefab == null || tracerPoolSize <= 0) return;
+
+        for (int i = 0; i < tracerPoolSize; i++)
+        {
+            LineRenderer tracer = Instantiate(tracerPrefab, transform);
+            tracer.gameObject.SetActive(false);
+            _tracerPool.Enqueue(tracer);
+        }
+    }
+
+    private void SpawnTracer(Vector3 start, Vector3 end)
+    {
+        if (tracerPrefab == null) return;
+        if (_tracerPool.Count == 0)
+        {
+            LineRenderer extraTracer = Instantiate(tracerPrefab, transform);
+            extraTracer.gameObject.SetActive(false);
+            _tracerPool.Enqueue(extraTracer);
+        }
+
+        LineRenderer tracer = _tracerPool.Dequeue();
+        tracer.gameObject.SetActive(true);
+
+        Vector3 origin = tracerOrigin != null ? tracerOrigin.position : start;
+        tracer.SetPosition(0, origin);
+        tracer.SetPosition(1, end);
+
+        StartCoroutine(DisableTracerAfter(tracer, tracerDuration));
+    }
+
+    private IEnumerator DisableTracerAfter(LineRenderer tracer, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        if (tracer != null)
+        {
+            tracer.gameObject.SetActive(false);
+            _tracerPool.Enqueue(tracer);
+        }
     }
 }

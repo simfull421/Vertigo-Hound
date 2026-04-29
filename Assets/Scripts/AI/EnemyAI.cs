@@ -46,6 +46,7 @@ public class EnemyAI : MonoBehaviour
     private AILocomotionController _locomotion;
     private EnemyAnimatorController _animController;
     private EnemyRagdollHandler _ragdollHandler;
+    private EnemyHealth _enemyHealth;
     private Transform _playerTransform;
 
     // ── 내부 상태 ──
@@ -92,6 +93,14 @@ public class EnemyAI : MonoBehaviour
         }
         if (_animController == null) _animController = GetComponent<EnemyAnimatorController>();
         if (_ragdollHandler == null) _ragdollHandler = GetComponent<EnemyRagdollHandler>();
+        if (_enemyHealth == null)
+        {
+            _enemyHealth = GetComponent<EnemyHealth>();
+            if (_enemyHealth == null)
+            {
+                _enemyHealth = gameObject.AddComponent<EnemyHealth>();
+            }
+        }
 
         if (_animController != null) _animController.SetLookAtTarget(playerTransform);
 
@@ -121,6 +130,7 @@ public class EnemyAI : MonoBehaviour
 
         if (_animController != null) _animController.Activate(aiType);
         if (_ragdollHandler != null) _ragdollHandler.ResetRagdoll();
+        if (_enemyHealth != null) _enemyHealth.ResetHealth();
     }
 
     public void Disable()
