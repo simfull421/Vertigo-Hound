@@ -41,7 +41,6 @@ public class EnemyAI : MonoBehaviour
     public int aiType = 0;
 
     // ── 컴포넌트 ──
-    private Rigidbody _rigidbody;
     private IAstarAI _ai;
     private RVOController _rvo;
     private AILocomotionController _locomotion;
@@ -85,7 +84,6 @@ public class EnemyAI : MonoBehaviour
     {
         _playerTransform = playerTransform;
 
-        if (_rigidbody == null) _rigidbody = GetComponent<Rigidbody>();
         if (_ai == null) _ai = GetComponent<IAstarAI>();
         if (_rvo == null) _rvo = GetComponent<RVOController>();
         if (_locomotion == null && _ai != null)
@@ -115,14 +113,6 @@ public class EnemyAI : MonoBehaviour
             _locomotion.ResumeMovement();
         }
 
-        if (_rigidbody != null)
-        {
-            _rigidbody.isKinematic = true;
-            _rigidbody.useGravity = false;
-            _rigidbody.linearVelocity = Vector3.zero;
-            _rigidbody.angularVelocity = Vector3.zero;
-        }
-
         CurrentState = EnemyState.Chasing;
         _stumbleCooldownTimer = stumbleCooldown; // 스폰 직후 넘어짐 방지
         _attackCooldownTimer = 1f; // 스폰 직후 즉시 공격 방지
@@ -143,7 +133,6 @@ public class EnemyAI : MonoBehaviour
     {
         CurrentState = EnemyState.Inactive;
         if (_locomotion != null) _locomotion.PauseMovement();
-        if (_rigidbody != null) { _rigidbody.linearVelocity = Vector3.zero; _rigidbody.angularVelocity = Vector3.zero; }
         gameObject.SetActive(false);
     }
 
@@ -268,8 +257,6 @@ public class EnemyAI : MonoBehaviour
 
         // 완전 정지
         if (_locomotion != null) _locomotion.PauseMovement();
-        if (_rigidbody != null)
-            _rigidbody.linearVelocity = new Vector3(0, _rigidbody.linearVelocity.y, 0);
 
         if (_animController != null) _animController.TriggerGetUp();
     }
