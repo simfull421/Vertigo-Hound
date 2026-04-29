@@ -143,14 +143,15 @@ public class PlayerCrosshairHUD : MonoBehaviour
 
     private void ApplyLayout()
     {
-        float halfLength = Mathf.Max(0f, lineLength) * 0.5f;
+        float safeLength = Mathf.Max(0f, lineLength);
+        float halfLength = safeLength * 0.5f;
         float offset = Mathf.Max(0f, lineGap) + halfLength;
         float thickness = Mathf.Max(1f, lineThickness);
 
-        ConfigureLine(lineUp, new Vector2(thickness, lineLength), new Vector2(0f, offset));
-        ConfigureLine(lineDown, new Vector2(thickness, lineLength), new Vector2(0f, -offset));
-        ConfigureLine(lineLeft, new Vector2(lineLength, thickness), new Vector2(-offset, 0f));
-        ConfigureLine(lineRight, new Vector2(lineLength, thickness), new Vector2(offset, 0f));
+        ConfigureLine(lineUp, new Vector2(thickness, safeLength), new Vector2(0f, offset));
+        ConfigureLine(lineDown, new Vector2(thickness, safeLength), new Vector2(0f, -offset));
+        ConfigureLine(lineLeft, new Vector2(safeLength, thickness), new Vector2(-offset, 0f));
+        ConfigureLine(lineRight, new Vector2(safeLength, thickness), new Vector2(offset, 0f));
     }
 
     private void ConfigureLine(Image line, Vector2 size, Vector2 anchoredPosition)
