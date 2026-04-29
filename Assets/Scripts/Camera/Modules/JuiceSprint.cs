@@ -71,7 +71,8 @@ public sealed class JuiceSprint : IJuiceModule
     {
         if (_isSuppressed) return;
         _targetImpulseY = impactAmountY;
-        _targetImpulseZ = (side.ToLower() == "left" ? 1f : -1f) * impactTiltZ;
+        bool isLeft = string.Equals(side, "left", StringComparison.OrdinalIgnoreCase);
+        _targetImpulseZ = (isLeft ? 1f : -1f) * impactTiltZ;
         EvaluateRoutine();
     }
 

@@ -51,10 +51,13 @@ public class PlayerCrosshairHUD : MonoBehaviour
 
     void OnValidate()
     {
+        #if UNITY_EDITOR
+        if (Application.isPlaying) return;
         CacheComponents();
         ResolveLineImages();
         ApplyLineStyle();
         ApplyLayout();
+        #endif
     }
 
     void Update()

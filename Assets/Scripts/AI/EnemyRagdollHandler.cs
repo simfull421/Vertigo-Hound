@@ -42,6 +42,7 @@ public class EnemyRagdollHandler : MonoBehaviour
     private Coroutine _returnCoroutine;
     private Coroutine _partialCoroutine;
     private Coroutine _hitLayerCoroutine;
+    private bool _isHitLayerValid = true;
     private readonly Dictionary<Rigidbody, Joint> _jointCache = new Dictionary<Rigidbody, Joint>();
 
     /// <summary>풀 반납 요청 이벤트. AISpawnManager가 구독합니다.</summary>
@@ -57,6 +58,8 @@ public class EnemyRagdollHandler : MonoBehaviour
         {
             animator = _animController.animator;
         }
+
+        ValidateHitLayer();
 
         // 레그돌 바디 자동 수집 (비어있을 경우)
         if (ragdollBodies == null || ragdollBodies.Length == 0)
@@ -98,6 +101,7 @@ public class EnemyRagdollHandler : MonoBehaviour
             _hitLayerCoroutine = null;
         }
 
+        ValidateHitLayer();
         SetRagdollActive(false);
     }
 
@@ -282,12 +286,7 @@ public class EnemyRagdollHandler : MonoBehaviour
 
     private IEnumerator SuppressHitLayer(float duration)
     {
-        if (animator == null) yield break;
-        if (hitLayerIndex < 0 || hitLayerIndex >= animator.layerCount)
-        {
-            Debug.LogWarning($"[EnemyRagdollHandler] Hit layer index {hitLayerIndex} is out of range for {gameObject.name}.");
-            yield break;
-        }
+        if (animator == null || !_isHitLayerValid) yield break;
 
         float startWeight = animator.GetLayerWeight(hitLayerIndex);
         float fadeTime = Mathf.Max(0f, hitLayerFadeTime);
@@ -320,6 +319,23 @@ public class EnemyRagdollHandler : MonoBehaviour
         }
 
         _hitLayerCoroutine = null;
+    }
+
+    private void ValidateHitLayer()
+    {
+        _isHitLayerValid = true;
+
+        if (animator == null)
+        {
+            _isHitLayerValid = false;
+            return;
+        }
+
+        if (hitLayerIndex < 0 || hitLayerIndex >= animator.layerCount)
+        {
+            _isHitLayerValid = false;
+            Debug.LogWarning($"[EnemyRagdollHandler] Hit layer index {hitLayerIndex} is out of range for {gameObject.name}.");
+        }
     }
 
     private void ApplyForceToBone(Rigidbody hitBone, Vector3 hitDirection, float force, Vector3 hitPoint)
