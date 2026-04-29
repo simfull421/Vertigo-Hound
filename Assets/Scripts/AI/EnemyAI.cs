@@ -3,36 +3,20 @@ using Pathfinding;
 using Pathfinding.RVO;
 
 /// <summary>
-/// 빙판 추적 AI — 심플 버전.
+/// A* Pathfinding Project 기반 추적 AI.
 /// 
 /// [아키텍처]
-/// - FollowerEntity: 경로 계산만 담당 (isStopped = true → 자체 이동 안 함)
-/// - Rigidbody + AddForce: 빙판 물리를 물리 엔진이 직접 처리
-/// - Rigidbody.linearDamping: 이 값이 마찰력 → 낮으면 빙판, 높으면 일반 땅
-/// 
-/// [파라미터 3개만 조절하면 됨]
-/// - acceleration: 얼마나 세게 밀어서 가속하는가
-/// - maxSpeed: 최대 속도 제한
-/// - Rigidbody.linearDamping (Inspector): 빙판 미끄러움 강도
+/// - IAstarAI(AIPath/RichAI 등): 경로 계산 + 이동 전담
+/// - AILocomotionController: 이동 제어, 정지/재개 제어
 /// </summary>
-[RequireComponent(typeof(Rigidbody))]
 public class EnemyAI : MonoBehaviour
 {
-    [Header("Movement")]
-    [Tooltip("가속력 (AddForce 강도). 높으면 빠르게 방향 전환, 낮으면 빙판")]
-    public float acceleration = 15f;
-    [Tooltip("최대 이동 속도")]
-    public float maxSpeed = 14f;
-    [Tooltip("회전 속도. 높으면 플레이어를 잘 쫓아감, 낮으면 코너에서 돌지 못함")]
-    public float turnSpeed = 8f;
-
     [Header("Stumble (넘어짐)")]
-    [Tooltip("가려는 방향과 실제 미끄러지는 방향의 각도가 이만큼 벌어지면 넘어짐 판정 시작 (도)")]
-    public float stumbleAngleThreshold = 100f;
-    [Tooltip("이 속도 이상에서만 넘어짐 판정")]
-    public float stumbleSpeedThreshold = 10f;
-    [Tooltip("넘어짐 판정 조건이 이 시간(초) 동안 유지되면 실제로 넘어짐. 낮을수록 잘 넘어짐.")]
-    public float stumbleTriggerTime = 0.5f;
+    [Tooltip("현재 바라보는 방향과 목표 방향의 각도 차이(도)가 이 값을 넘으면 넘어짐 확률 체크")]
+    public float stumbleAngleThreshold = 60f;
+    [Range(0f, 1f)]
+    [Tooltip("급격한 방향 전환 시 넘어짐 확률")]
+    public float stumbleChance = 0.3f;
     [Tooltip("넘어져서 미끄러지는 시간 (초)")]
     public float stumbleDuration = 1.5f;
     [Tooltip("넘어짐 애니메이션 종류 수 (0번부터 N-1번까지 랜덤 선택)")]
@@ -57,15 +41,15 @@ public class EnemyAI : MonoBehaviour
     public int aiType = 0;
 
     // ── 컴포넌트 ──
-    [HideInInspector] public Rigidbody rb;
+    private Rigidbody _rigidbody;
     private IAstarAI _ai;
     private RVOController _rvo;
+    private AILocomotionController _locomotion;
     private EnemyAnimatorController _animController;
     private EnemyRagdollHandler _ragdollHandler;
     private Transform _playerTransform;
 
     // ── 내부 상태 ──
-    private float _stumbleAccumulatorTimer;
     private float _stumbleTimer;
     private float _stumbleCooldownTimer;
     private float _attackCooldownTimer;
@@ -78,10 +62,10 @@ public class EnemyAI : MonoBehaviour
     public EnemyState CurrentState { get; private set; } = EnemyState.Inactive;
 
     /// <summary>현재 이동 속도 벡터 (레그돌 관성 전달용)</summary>
-    public Vector3 CurrentVelocity => rb != null ? new Vector3(rb.linearVelocity.x, 0, rb.linearVelocity.z) : Vector3.zero;
+    public Vector3 CurrentVelocity => _locomotion != null ? _locomotion.CurrentVelocity : Vector3.zero;
 
     /// <summary>현재 수평 속도 스칼라 (애니메이션용)</summary>
-    public float CurrentSpeed => CurrentVelocity.magnitude;
+    public float CurrentSpeed => _locomotion != null ? _locomotion.CurrentSpeed : 0f;
 
     public enum EnemyState
     {
@@ -101,16 +85,19 @@ public class EnemyAI : MonoBehaviour
     {
         _playerTransform = playerTransform;
 
-        if (rb == null) rb = GetComponent<Rigidbody>();
+        if (_rigidbody == null) _rigidbody = GetComponent<Rigidbody>();
         if (_ai == null) _ai = GetComponent<IAstarAI>();
         if (_rvo == null) _rvo = GetComponent<RVOController>();
+        if (_locomotion == null && _ai != null)
+        {
+            _locomotion = new AILocomotionController(_ai, _rvo, transform);
+        }
         if (_animController == null) _animController = GetComponent<EnemyAnimatorController>();
         if (_ragdollHandler == null) _ragdollHandler = GetComponent<EnemyRagdollHandler>();
 
         if (_animController != null) _animController.SetLookAtTarget(playerTransform);
 
-        if (_ai == null) Debug.LogError($"[EnemyAI] IAstarAI(FollowerEntity) 없음! ({gameObject.name})");
-        if (rb == null) Debug.LogError($"[EnemyAI] Rigidbody 없음! ({gameObject.name})");
+        if (_ai == null) Debug.LogError($"[EnemyAI] IAstarAI(AIPath/RichAI) 없음! ({gameObject.name})");
 
         _isInitialized = true;
     }
@@ -122,23 +109,18 @@ public class EnemyAI : MonoBehaviour
         gameObject.SetActive(true);
         transform.position = spawnPosition;
 
-        if (_ai != null)
+        if (_locomotion != null)
         {
-            _ai.Teleport(spawnPosition, true);
-            _ai.canSearch = true;
-            // ★ 핵심: FollowerEntity는 경로만 계산. 자체 이동은 하지 않음.
-            // steeringTarget에서 방향만 읽고, 실제 이동은 Rigidbody AddForce로 처리.
-            _ai.isStopped = true;
+            _locomotion.Teleport(spawnPosition, true);
+            _locomotion.ResumeMovement();
         }
 
-        if (_rvo != null) _rvo.locked = false;
-
-        if (rb != null)
+        if (_rigidbody != null)
         {
-            rb.isKinematic = false;
-            rb.useGravity = true;
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
+            _rigidbody.isKinematic = true;
+            _rigidbody.useGravity = false;
+            _rigidbody.linearVelocity = Vector3.zero;
+            _rigidbody.angularVelocity = Vector3.zero;
         }
 
         CurrentState = EnemyState.Chasing;
@@ -154,19 +136,19 @@ public class EnemyAI : MonoBehaviour
     public void Disable()
     {
         CurrentState = EnemyState.Dead;
-        if (_ai != null) { _ai.canSearch = false; _ai.isStopped = true; }
-        if (_rvo != null) _rvo.locked = true;
+        if (_locomotion != null) _locomotion.PauseMovement();
     }
 
     public void Deactivate()
     {
         CurrentState = EnemyState.Inactive;
-        if (rb != null) { rb.linearVelocity = Vector3.zero; rb.angularVelocity = Vector3.zero; }
+        if (_locomotion != null) _locomotion.PauseMovement();
+        if (_rigidbody != null) { _rigidbody.linearVelocity = Vector3.zero; _rigidbody.angularVelocity = Vector3.zero; }
         gameObject.SetActive(false);
     }
 
     // ══════════════════════════════════════════════
-    //  Update / FixedUpdate
+    //  Update
     // ══════════════════════════════════════════════
 
     void Update()
@@ -182,6 +164,7 @@ public class EnemyAI : MonoBehaviour
         {
             case EnemyState.Chasing:
                 UpdateChasing();
+                TryTriggerStumble();
                 break;
             case EnemyState.Stumbling:
                 UpdateStumbling();
@@ -215,16 +198,8 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    void FixedUpdate()
-    {
-        if (CurrentState != EnemyState.Chasing) return;
-        if (_playerTransform == null) return;
-
-        ApplyIceMovement();
-    }
-
     // ══════════════════════════════════════════════
-    //  Chasing — 빙판 물리 (AddForce)
+    //  Chasing
     // ══════════════════════════════════════════════
 
     private void UpdateChasing()
@@ -246,66 +221,20 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    private void ApplyIceMovement()
+    private void TryTriggerStumble()
     {
-        if (rb == null) return;
+        if (_stumbleCooldownTimer > 0f) return;
+        if (_locomotion == null) return;
 
-        // 1. A* steeringTarget → 가야 할 방향
-        Vector3 desiredDir = Vector3.zero;
-        if (_ai != null)
-        {
-            Vector3 toTarget = _ai.steeringTarget - transform.position;
-            toTarget.y = 0f;
-            if (toTarget.sqrMagnitude > 0.01f)
-                desiredDir = toTarget.normalized;
-        }
+        Vector3 desiredDir = _locomotion.GetDesiredDirection();
+        if (desiredDir.sqrMagnitude < 0.01f) return;
 
-        // 2. 빙판 물리: AddForce
-        if (desiredDir.sqrMagnitude > 0.1f)
-        {
-            rb.AddForce(desiredDir * acceleration, ForceMode.Acceleration);
-        }
+        float turnAngle = Vector3.Angle(transform.forward, desiredDir);
+        if (turnAngle < stumbleAngleThreshold) return;
 
-        // 3. 최대 속도 제한
-        Vector3 horizontalVel = new Vector3(rb.linearVelocity.x, 0, rb.linearVelocity.z);
-        float speed = horizontalVel.magnitude;
-        if (speed > maxSpeed)
+        if (Random.value <= stumbleChance)
         {
-            Vector3 clampedVel = horizontalVel.normalized * maxSpeed;
-            rb.linearVelocity = new Vector3(clampedVel.x, rb.linearVelocity.y, clampedVel.z);
-            speed = maxSpeed;
-        }
-
-        // 4. 회전
-        if (horizontalVel.sqrMagnitude > 1f)
-        {
-            Quaternion targetRot = Quaternion.LookRotation(horizontalVel.normalized, Vector3.up);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, turnSpeed * Time.fixedDeltaTime);
-        }
-
-        // 5. 넘어짐 판정 (각도 + 속도 + 유지 시간)
-        // 실제 미끄러지는 방향(horizontalVel)과 가야 할 방향(desiredDir)의 각도를 비교
-        if (speed > stumbleSpeedThreshold && desiredDir.sqrMagnitude > 0.1f && _stumbleCooldownTimer <= 0f)
-        {
-            float slipAngle = Vector3.Angle(desiredDir, horizontalVel.normalized);
-            if (slipAngle > stumbleAngleThreshold)
-            {
-                _stumbleAccumulatorTimer += Time.fixedDeltaTime;
-                if (_stumbleAccumulatorTimer > stumbleTriggerTime)
-                {
-                    TriggerStumble();
-                    _stumbleAccumulatorTimer = 0f;
-                }
-            }
-            else
-            {
-                // 각도가 안정권에 들어오면 타이머 서서히 회복
-                _stumbleAccumulatorTimer = Mathf.Max(0f, _stumbleAccumulatorTimer - Time.fixedDeltaTime);
-            }
-        }
-        else
-        {
-            _stumbleAccumulatorTimer = Mathf.Max(0f, _stumbleAccumulatorTimer - Time.fixedDeltaTime);
+            TriggerStumble();
         }
     }
 
@@ -317,6 +246,7 @@ public class EnemyAI : MonoBehaviour
     {
         CurrentState = EnemyState.Stumbling;
         _stumbleTimer = stumbleDuration;
+        if (_locomotion != null) _locomotion.PauseMovement();
 
         // 랜덤 넘어짐 변형 선택 (0 ~ stumbleVariantCount-1)
         int variant = Random.Range(0, Mathf.Max(1, stumbleVariantCount));
@@ -337,8 +267,9 @@ public class EnemyAI : MonoBehaviour
         CurrentState = EnemyState.GettingUp;
 
         // 완전 정지
-        if (rb != null)
-            rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+        if (_locomotion != null) _locomotion.PauseMovement();
+        if (_rigidbody != null)
+            _rigidbody.linearVelocity = new Vector3(0, _rigidbody.linearVelocity.y, 0);
 
         if (_animController != null) _animController.TriggerGetUp();
     }
@@ -352,6 +283,7 @@ public class EnemyAI : MonoBehaviour
         if (CurrentState != EnemyState.GettingUp) return;
         CurrentState = EnemyState.Chasing;
         _stumbleCooldownTimer = stumbleCooldown;
+        if (_locomotion != null) _locomotion.ResumeMovement();
         UpdateDestination();
     }
 
@@ -386,8 +318,8 @@ public class EnemyAI : MonoBehaviour
 
     private void UpdateDestination()
     {
-        if (_playerTransform == null || _ai == null) return;
-        _ai.destination = _playerTransform.position + _currentRandomOffset;
+        if (_playerTransform == null || _locomotion == null) return;
+        _locomotion.SetDestination(_playerTransform.position + _currentRandomOffset);
     }
 
     private Vector3 GenerateRandomOffset()

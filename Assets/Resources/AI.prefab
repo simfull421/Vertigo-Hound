@@ -1792,13 +1792,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7ea0218fb2d4af640b3550cb8dbb6b20, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyAI
-  acceleration: 100
-  maxSpeed: 300
-  turnSpeed: 100
-  guardDistance: 5
-  stumbleAngleThreshold: 70
-  stumbleSpeedThreshold: 10
-  stumbleTriggerTime: 0.5
+  stumbleAngleThreshold: 60
+  stumbleChance: 0.3
   stumbleDuration: 1
   stumbleVariantCount: 3
   stumbleCooldown: 3
@@ -1807,7 +1802,6 @@ MonoBehaviour:
   pathRandomOffset: 10
   destinationUpdateInterval: 0.5
   aiType: 0
-  rb: {fileID: 0}
 --- !u!114 &2053853059142455969
 MonoBehaviour:
   m_ObjectHideFlags: 0
