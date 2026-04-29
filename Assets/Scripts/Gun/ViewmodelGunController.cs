@@ -290,9 +290,9 @@ public class ViewmodelGunController : MonoBehaviour
         if (tag == "Head") return HitZone.Head;
         if (tag == "Body") return HitZone.Body;
 
-        string name = hitCollider.name.ToLowerInvariant();
-        if (name.Contains("head")) return HitZone.Head;
-        if (name.Contains("body")) return HitZone.Body;
+        string name = hitCollider.name;
+        if (NameMatchesToken(name, "head")) return HitZone.Head;
+        if (NameMatchesToken(name, "body")) return HitZone.Body;
 
         return HitZone.Body;
     }
@@ -313,6 +313,7 @@ public class ViewmodelGunController : MonoBehaviour
 
     private void SpawnTracer(Vector3 start, Vector3 end)
     {
+        // 풀을 초과하면 렌더를 건너뛰며, tracerOrigin이 있으면 start를 대체합니다.
         if (tracerPrefab == null) return;
         if (_tracerPool.Count == 0)
         {
@@ -341,5 +342,21 @@ public class ViewmodelGunController : MonoBehaviour
             tracer.gameObject.SetActive(false);
             _tracerPool.Enqueue(tracer);
         }
+    }
+
+    private bool NameMatchesToken(string name, string token)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+
+        string lower = name.ToLowerInvariant();
+        if (lower == token) return true;
+
+        string[] parts = lower.Split(new[] { '_', '-', ' ', '.' }, System.StringSplitOptions.RemoveEmptyEntries);
+        foreach (string part in parts)
+        {
+            if (part == token) return true;
+        }
+
+        return false;
     }
 }

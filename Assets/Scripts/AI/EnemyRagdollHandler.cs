@@ -256,6 +256,7 @@ public class EnemyRagdollHandler : MonoBehaviour
     private void ApplyForceToBone(Rigidbody hitBone, Vector3 hitDirection, float force, Vector3 hitPoint)
     {
         if (hitBone == null) return;
+        // 질량과 무관한 즉각 속도 부여로 과도한 질량 차이를 완화
         hitBone.AddForceAtPosition(hitDirection * force, hitPoint, ForceMode.VelocityChange);
     }
 
