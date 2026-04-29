@@ -31,6 +31,8 @@ public class EnemyRagdollHandler : MonoBehaviour
     [Header("Partial Ragdoll")]
     [Tooltip("부분 레그돌 유지 시간 (초)")]
     public float partialRagdollDuration = 0.15f;
+    [Tooltip("부분 레그돌 복구 블렌딩 시간 (초)")]
+    [SerializeField] private float partialRecoveryBlendTime = 0.1f;
 
     [Header("Hit Reaction Layer")]
     [SerializeField] private int hitLayerIndex = 1;
@@ -44,6 +46,9 @@ public class EnemyRagdollHandler : MonoBehaviour
     private Coroutine _hitLayerCoroutine;
     private bool _isHitLayerValid = true;
     private readonly Dictionary<Rigidbody, Joint> _jointCache = new Dictionary<Rigidbody, Joint>();
+    private readonly HashSet<Rigidbody> _partialRagdollBodies = new HashSet<Rigidbody>();
+    private readonly Dictionary<Rigidbody, BlendState> _blendStates = new Dictionary<Rigidbody, BlendState>();
+    private readonly List<Rigidbody> _blendRemovalCache = new List<Rigidbody>();
 
     /// <summary>풀 반납 요청 이벤트. AISpawnManager가 구독합니다.</summary>
     public System.Action<EnemyAI> OnReturnToPool;
@@ -78,6 +83,64 @@ public class EnemyRagdollHandler : MonoBehaviour
         SetRagdollActive(false);
     }
 
+    private void LateUpdate()
+    {
+        if (_partialRagdollBodies.Count == 0 && _blendStates.Count == 0) return;
+
+        if (_blendStates.Count > 0)
+        {
+            foreach (var state in _blendStates.Values)
+            {
+                if (state.Transform == null) continue;
+                state.TargetPosition = state.Transform.position;
+                state.TargetRotation = state.Transform.rotation;
+            }
+        }
+
+        if (_partialRagdollBodies.Count > 0)
+        {
+            foreach (var rb in _partialRagdollBodies)
+            {
+                if (rb == null) continue;
+                Transform boneTransform = rb.transform;
+                boneTransform.position = rb.position;
+                boneTransform.rotation = rb.rotation;
+            }
+        }
+
+        if (_blendStates.Count == 0) return;
+
+        float now = Time.time;
+        _blendRemovalCache.Clear();
+
+        foreach (var kvp in _blendStates)
+        {
+            BlendState state = kvp.Value;
+            if (state.Transform == null)
+            {
+                _blendRemovalCache.Add(kvp.Key);
+                continue;
+            }
+
+            float duration = Mathf.Max(0f, state.Duration);
+            float t = duration <= 0f ? 1f : Mathf.Clamp01((now - state.StartTime) / duration);
+            Vector3 blendedPosition = Vector3.Lerp(state.StartPosition, state.TargetPosition, t);
+            Quaternion blendedRotation = Quaternion.Slerp(state.StartRotation, state.TargetRotation, t);
+            state.Transform.position = blendedPosition;
+            state.Transform.rotation = blendedRotation;
+
+            if (t >= 1f)
+            {
+                _blendRemovalCache.Add(kvp.Key);
+            }
+        }
+
+        foreach (var rb in _blendRemovalCache)
+        {
+            _blendStates.Remove(rb);
+        }
+    }
+
     /// <summary>
     /// 레그돌 상태 초기화. 풀에서 재활성화될 때 호출.
     /// </summary>
@@ -101,6 +164,7 @@ public class EnemyRagdollHandler : MonoBehaviour
             _hitLayerCoroutine = null;
         }
 
+        ClearPartialRagdollState();
         ValidateHitLayer();
         SetRagdollActive(false);
     }
@@ -151,6 +215,7 @@ public class EnemyRagdollHandler : MonoBehaviour
             StopCoroutine(_hitLayerCoroutine);
             _hitLayerCoroutine = null;
         }
+        ClearPartialRagdollState();
 
         // 1. AI 이동 완전 정지
         Vector3 inertiaVelocity = _enemyAI.CurrentVelocity;
@@ -190,6 +255,7 @@ public class EnemyRagdollHandler : MonoBehaviour
         }
 
         List<Rigidbody> partialBodies = GetPartialBodies(hitBone);
+        RegisterPartialRagdollBodies(partialBodies);
         SetPartialRagdollActive(partialBodies, true);
         ApplyForceToBone(hitBone, hitDirection, force, hitPoint);
 
@@ -212,6 +278,10 @@ public class EnemyRagdollHandler : MonoBehaviour
             if (rb == null || rb == _mainRb) continue; // 루트 Rigidbody는 EnemyAI가 관리
             rb.isKinematic = !active;
             rb.useGravity = active;
+            if (active)
+            {
+                rb.WakeUp();
+            }
         }
 
         // 레그돌 콜라이더 활성/비활성
@@ -235,6 +305,10 @@ public class EnemyRagdollHandler : MonoBehaviour
             if (rb == null || rb == _mainRb) continue;
             rb.isKinematic = !active;
             rb.useGravity = active;
+            if (active)
+            {
+                rb.WakeUp();
+            }
         }
 
         if (ragdollColliders == null) return;
@@ -255,21 +329,8 @@ public class EnemyRagdollHandler : MonoBehaviour
         HashSet<Rigidbody> bodies = new HashSet<Rigidbody>();
         if (hitBone == null) return new List<Rigidbody>();
 
-        bodies.Add(hitBone);
-
-        if (_jointCache.TryGetValue(hitBone, out Joint joint) && joint.connectedBody != null)
-        {
-            bodies.Add(joint.connectedBody);
-        }
-
-        foreach (var rb in ragdollBodies)
-        {
-            if (rb == null || rb == _mainRb) continue;
-            if (_jointCache.TryGetValue(rb, out Joint rbJoint) && rbJoint.connectedBody == hitBone)
-            {
-                bodies.Add(rb);
-            }
-        }
+        Dictionary<Rigidbody, List<Rigidbody>> childMap = BuildJointChildMap();
+        CollectPartialBodiesRecursive(hitBone, childMap, bodies);
 
         return new List<Rigidbody>(bodies);
     }
@@ -280,7 +341,9 @@ public class EnemyRagdollHandler : MonoBehaviour
 
         if (_enemyAI.CurrentState == EnemyAI.EnemyState.Dead) yield break;
 
+        BeginPartialRecoveryBlend(bodies);
         SetPartialRagdollActive(bodies, false);
+        _partialRagdollBodies.Clear();
         _partialCoroutine = null;
     }
 
@@ -342,7 +405,84 @@ public class EnemyRagdollHandler : MonoBehaviour
     {
         if (hitBone == null) return;
         // 질량과 무관한 즉각 속도 부여로 과도한 질량 차이를 완화
+        hitBone.WakeUp();
         hitBone.AddForceAtPosition(hitDirection * force, hitPoint, ForceMode.VelocityChange);
+    }
+
+    private void RegisterPartialRagdollBodies(List<Rigidbody> bodies)
+    {
+        _partialRagdollBodies.Clear();
+        if (bodies == null) return;
+
+        foreach (var rb in bodies)
+        {
+            if (rb == null || rb == _mainRb) continue;
+            _partialRagdollBodies.Add(rb);
+            _blendStates.Remove(rb);
+        }
+    }
+
+    private void BeginPartialRecoveryBlend(List<Rigidbody> bodies)
+    {
+        if (bodies == null) return;
+        float duration = Mathf.Max(0f, partialRecoveryBlendTime);
+
+        foreach (var rb in bodies)
+        {
+            if (rb == null || rb == _mainRb) continue;
+            Transform boneTransform = rb.transform;
+            BlendState state = new BlendState
+            {
+                Transform = boneTransform,
+                StartPosition = boneTransform.position,
+                StartRotation = boneTransform.rotation,
+                StartTime = Time.time,
+                Duration = duration
+            };
+            _blendStates[rb] = state;
+        }
+    }
+
+    private void ClearPartialRagdollState()
+    {
+        _partialRagdollBodies.Clear();
+        _blendStates.Clear();
+        _blendRemovalCache.Clear();
+    }
+
+    private Dictionary<Rigidbody, List<Rigidbody>> BuildJointChildMap()
+    {
+        Dictionary<Rigidbody, List<Rigidbody>> childMap = new Dictionary<Rigidbody, List<Rigidbody>>();
+        if (ragdollBodies == null) return childMap;
+
+        foreach (var rb in ragdollBodies)
+        {
+            if (rb == null || rb == _mainRb) continue;
+            if (_jointCache.TryGetValue(rb, out Joint joint) && joint != null && joint.connectedBody != null)
+            {
+                if (!childMap.TryGetValue(joint.connectedBody, out List<Rigidbody> list))
+                {
+                    list = new List<Rigidbody>();
+                    childMap[joint.connectedBody] = list;
+                }
+                list.Add(rb);
+            }
+        }
+
+        return childMap;
+    }
+
+    private void CollectPartialBodiesRecursive(Rigidbody current, Dictionary<Rigidbody, List<Rigidbody>> childMap, HashSet<Rigidbody> bodies)
+    {
+        if (current == null || bodies.Contains(current)) return;
+        bodies.Add(current);
+
+        if (!childMap.TryGetValue(current, out List<Rigidbody> children)) return;
+
+        foreach (var child in children)
+        {
+            CollectPartialBodiesRecursive(child, childMap, bodies);
+        }
     }
 
     private void CacheJoints()
@@ -367,5 +507,16 @@ public class EnemyRagdollHandler : MonoBehaviour
 
         // 풀 반납 이벤트 발동
         OnReturnToPool?.Invoke(_enemyAI);
+    }
+
+    private class BlendState
+    {
+        public Transform Transform;
+        public Vector3 StartPosition;
+        public Quaternion StartRotation;
+        public Vector3 TargetPosition;
+        public Quaternion TargetRotation;
+        public float StartTime;
+        public float Duration;
     }
 }
