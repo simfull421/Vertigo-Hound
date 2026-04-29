@@ -28,10 +28,7 @@ public class EnemyHealth : MonoBehaviour
     /// </summary>
     public bool TakeHit(float damage, Vector3 hitPoint, Vector3 hitDir, Rigidbody hitRb)
     {
-        // 히트 파이프라인과의 시그니처 호환을 위해 유지
-        _ = hitPoint;
-        _ = hitDir;
-        _ = hitRb;
+        // 히트 파이프라인과의 시그니처 호환 및 확장 여지를 위해 유지
 
         if (_isDead) return false;
 

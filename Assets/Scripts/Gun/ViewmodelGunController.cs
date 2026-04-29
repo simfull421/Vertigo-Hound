@@ -244,7 +244,7 @@ public class ViewmodelGunController : MonoBehaviour
 
             if (health != null)
             {
-                bool alive = health.TakeHit(finalDamage, hit.point, shootDirection, hitBone);
+                bool isDead = !health.TakeHit(finalDamage, hit.point, shootDirection, hitBone);
 
                 if (_hub != null && _hub.audioManager != null)
                 {
@@ -253,7 +253,7 @@ public class ViewmodelGunController : MonoBehaviour
 
                 if (ragdoll != null)
                 {
-                    ragdoll.ApplyHit(hit.point, shootDirection, totalForce, hitBone, !alive);
+                    ragdoll.ApplyHit(hit.point, shootDirection, totalForce, hitBone, isDead);
                 }
             }
             else if (ragdoll != null)
@@ -313,7 +313,7 @@ public class ViewmodelGunController : MonoBehaviour
 
     private void SpawnTracer(Vector3 start, Vector3 end)
     {
-        // 풀을 초과하면 렌더를 건너뛰며, tracerOrigin이 있으면 start를 대체합니다.
+        // 풀을 동적 확장하고, tracerMaxPoolSize 초과 시 렌더를 건너뛰며 tracerOrigin이 있으면 start를 대체합니다.
         if (tracerPrefab == null) return;
         if (_tracerPool.Count == 0)
         {
