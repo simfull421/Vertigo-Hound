@@ -58,6 +58,7 @@ public class EnemyRagdollHandler : MonoBehaviour
         _enemyAI = GetComponent<EnemyAI>();
         _animController = GetComponent<EnemyAnimatorController>();
         _mainRb = GetComponent<Rigidbody>();
+        Collider rootCollider = GetComponent<Collider>();
 
         if (animator == null && _animController != null)
         {
@@ -78,6 +79,19 @@ public class EnemyRagdollHandler : MonoBehaviour
         }
 
         CacheJoints();
+
+        // [중요] 루트 콜라이더와 레그돌 콜라이더 간의 충돌 무시 설정
+        // 캡슐 안에 레그돌 본들이 들어있으므로, 충격 시 서로 밀어내려다 뻣뻣하게 굳는 현상을 방지합니다.
+        if (rootCollider != null && ragdollColliders != null)
+        {
+            foreach (var col in ragdollColliders)
+            {
+                if (col != null && col != rootCollider)
+                {
+                    Physics.IgnoreCollision(rootCollider, col);
+                }
+            }
+        }
 
         // 초기 상태: 레그돌 비활성화 (Kinematic)
         SetRagdollActive(false);

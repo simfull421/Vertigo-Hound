@@ -1767,8 +1767,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7ea0218fb2d4af640b3550cb8dbb6b20, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyAI
-  stumbleAngleThreshold: 40
-  stumbleChance: 0.2
+  stumbleAngleThreshold: 90
+  stumbleChance: 0.1
   stumbleDuration: 1
   stumbleVariantCount: 3
   stumbleCooldown: 3
@@ -1834,6 +1834,8 @@ MonoBehaviour:
   - {fileID: 2260812305921139811}
   - {fileID: 6689051239138019095}
   partialRagdollDuration: 0.15
+  hitLayerIndex: 1
+  hitLayerFadeTime: 0.05
 --- !u!95 &3503250216401865514
 Animator:
   serializedVersion: 7

@@ -58,11 +58,12 @@ public class ViewmodelGunController : MonoBehaviour
     public Color bodyHitColor = Color.white;
     public Color headshotHitColor = Color.red;
     public float hitMarkerDuration = 0.1f;
+    [Tooltip("하이어라키에 직접 만든 십자 이미지 오브젝트(4개 이미지 포함)를 여기에 할당하세요.")]
+    public GameObject customHitMarker;
     private Coroutine _hitMarkerCoroutine;
 
     private CanvasGroup _hitMarkerCanvasGroup;
-    private Image _hitLine1;
-    private Image _hitLine2;
+    private Image[] _hitMarkerImages;
 
     // 내부 상태 변수들
     private float _nextFireTime;
@@ -113,7 +114,18 @@ public class ViewmodelGunController : MonoBehaviour
         if (viewmodelCamera != null) _defaultFOV = viewmodelCamera.fieldOfView;
 
         InitializeTracerPool();
-        CreateProceduralHitMarker();
+        
+        if (customHitMarker != null)
+        {
+            _hitMarkerCanvasGroup = customHitMarker.GetComponent<CanvasGroup>();
+            if (_hitMarkerCanvasGroup == null) _hitMarkerCanvasGroup = customHitMarker.AddComponent<CanvasGroup>();
+            _hitMarkerCanvasGroup.alpha = 0f;
+            _hitMarkerImages = customHitMarker.GetComponentsInChildren<Image>();
+        }
+        else
+        {
+            CreateProceduralHitMarker();
+        }
     }
 
     public void UpdateModule()
@@ -352,8 +364,13 @@ public class ViewmodelGunController : MonoBehaviour
         if (_hitMarkerCanvasGroup == null) yield break;
 
         Color targetColor = isHeadshot ? headshotHitColor : bodyHitColor;
-        _hitLine1.color = targetColor;
-        _hitLine2.color = targetColor;
+        if (_hitMarkerImages != null)
+        {
+            foreach (var img in _hitMarkerImages)
+            {
+                if (img != null) img.color = targetColor;
+            }
+        }
         
         // 투명도 1로 즉시 설정
         _hitMarkerCanvasGroup.alpha = 1f;
@@ -390,15 +407,17 @@ public class ViewmodelGunController : MonoBehaviour
 
         GameObject line1Obj = new GameObject("Line1");
         line1Obj.transform.SetParent(markerObj.transform, false);
-        _hitLine1 = line1Obj.AddComponent<Image>();
-        _hitLine1.rectTransform.sizeDelta = lineSize;
-        _hitLine1.rectTransform.localRotation = Quaternion.Euler(0, 0, 45f);
+        Image img1 = line1Obj.AddComponent<Image>();
+        img1.rectTransform.sizeDelta = lineSize;
+        img1.rectTransform.localRotation = Quaternion.Euler(0, 0, 45f);
 
         GameObject line2Obj = new GameObject("Line2");
         line2Obj.transform.SetParent(markerObj.transform, false);
-        _hitLine2 = line2Obj.AddComponent<Image>();
-        _hitLine2.rectTransform.sizeDelta = lineSize;
-        _hitLine2.rectTransform.localRotation = Quaternion.Euler(0, 0, -45f);
+        Image img2 = line2Obj.AddComponent<Image>();
+        img2.rectTransform.sizeDelta = lineSize;
+        img2.rectTransform.localRotation = Quaternion.Euler(0, 0, -45f);
+
+        _hitMarkerImages = new Image[] { img1, img2 };
     }
 
     private bool NameMatchesToken(string name, string token)
