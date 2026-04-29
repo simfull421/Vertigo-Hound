@@ -116,6 +116,11 @@ public class EnemyRagdollHandler : MonoBehaviour
             foreach (var rb in ragdollBodies)
             {
                 if (rb == null || rb == _mainRb) continue;
+                if (rb.isKinematic)
+                {
+                    rb.isKinematic = false;
+                    rb.useGravity = true;
+                }
                 rb.linearVelocity = inertiaVelocity;
             }
         }
@@ -135,6 +140,11 @@ public class EnemyRagdollHandler : MonoBehaviour
     {
         if (hitBone == null) return;
         // 질량과 무관한 즉각 속도 부여로 과도한 질량 차이를 완화
+        if (hitBone.isKinematic)
+        {
+            hitBone.isKinematic = false;
+            hitBone.useGravity = true;
+        }
         hitBone.WakeUp();
         hitBone.AddForceAtPosition(hitDirection * force, hitPoint, ForceMode.VelocityChange);
     }
