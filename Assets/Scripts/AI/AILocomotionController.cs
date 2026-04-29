@@ -38,6 +38,7 @@ public sealed class AILocomotionController
         Vector3 desired = _ai.desiredVelocity;
         desired.y = 0f;
 
+        // desiredVelocity가 0에 가까울 때는 경로 계산 중이거나 정지 중일 수 있어 steeringTarget으로 보완합니다.
         if (desired.sqrMagnitude < DirectionEpsilon)
         {
             Vector3 toTarget = _ai.steeringTarget - _transform.position;
@@ -63,6 +64,7 @@ public sealed class AILocomotionController
     public void PauseMovement()
     {
         if (_ai == null) return;
+        // canSearch: 경로 탐색 중지, simulateMovement: 이동/회피 시뮬레이션 중지, isStopped: 경로 유지한 채 정지
         _ai.canSearch = false;
         _ai.simulateMovement = false;
         _ai.isStopped = true;
@@ -73,6 +75,7 @@ public sealed class AILocomotionController
     public void ResumeMovement()
     {
         if (_ai == null) return;
+        // 경로/이동/회피를 모두 재개하여 IAstarAI의 기본 이동으로 복귀
         _ai.canSearch = true;
         _ai.simulateMovement = true;
         _ai.isStopped = false;
