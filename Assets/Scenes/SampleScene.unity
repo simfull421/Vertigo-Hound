@@ -1481,6 +1481,13 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 4ec2a6b637529594281383adad7770a8, type: 3}
   baseVolume: 0.5
   runVolumeMultiplier: 1.5
+  bodyHitClips:
+  - {fileID: 8300000, guid: bfa6562473ce4a241964f54066ea54dd, type: 3}
+  headHitClips:
+  - {fileID: 8300000, guid: 468523a632b1cf141a80b010b074680b, type: 3}
+  - {fileID: 8300000, guid: 22356e47641c76e45a9ece19e273bf9b, type: 3}
+  hitVolume: 0.6
+  hitAudioPoolSize: 5
 --- !u!82 &330585550
 AudioSource:
   m_ObjectHideFlags: 0
@@ -1928,13 +1935,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 415419574}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0.3}
+  m_LocalRotation: {x: 0.08715578, y: 0, z: 0, w: 0.9961947}
+  m_LocalPosition: {x: 0, y: -0.005, z: 0.05}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 330585546}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 10, y: 0, z: 0}
 --- !u!1 &431606408
 GameObject:
   m_ObjectHideFlags: 0
@@ -2069,12 +2076,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ViewmodelGunController
   gunAnimator: {fileID: 515004621}
   mainCameraTransform: {fileID: 330585546}
-  maxAmmo: 15
+  maxAmmo: 50
   currentAmmo: 0
-  fireRate: 0.2
-  reloadTime: 1.5
-  damage: 25
+  fireRate: 0.1
+  reloadTime: 1
+  damage: 10
+  headshotMultiplier: 2.5
   range: 100
+  hitMask:
+    serializedVersion: 2
+    m_Bits: 42944
   weaponRoot: {fileID: 1427392411}
   sightNode: {fileID: 2008754168}
   cameraCenter: {fileID: 415419575}
@@ -2085,13 +2096,17 @@ MonoBehaviour:
   swayAmount: 0.02
   maxSwayAmount: 0.06
   swaySmooth: 6
-  recoilKickPos: {x: 0, y: 0, z: -0.1}
-  recoilKickRot: {x: -5, y: 0, z: 0}
-  recoilSnappiness: 20
-  recoilReturnSpeed: 10
-  pelletCount: 8
   spreadAngle: 0.05
   totalForce: 50
+  cameraRecoilPitch: 1.5
+  tracerPrefab: {fileID: 3755259403375128225, guid: 937c3511454f3224fa508e52ef70adfa, type: 3}
+  tracerPoolSize: 12
+  tracerMaxPoolSize: 24
+  tracerDuration: 0.05
+  tracerOrigin: {fileID: 1287141201}
+  bodyHitColor: {r: 1, g: 1, b: 1, a: 1}
+  headshotHitColor: {r: 1, g: 0, b: 0, a: 1}
+  hitMarkerDuration: 0.1
 --- !u!1 &551861630
 GameObject:
   m_ObjectHideFlags: 0
@@ -3342,6 +3357,7 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1713854915}
+  - {fileID: 1769372732}
   m_Father: {fileID: 1188569976}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -4809,6 +4825,7 @@ MonoBehaviour:
     mouseSensitivity: 0.1
     maxPitchUp: -90
     maxPitchDown: 70
+    recoilApplySpeed: 30
     rideHeight: 1.2
     raycastLength: 1.5
     springStiffness: 250
@@ -6434,6 +6451,81 @@ Transform:
   - {fileID: 1280917094}
   m_Father: {fileID: 1564272613}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1769372731
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1769372732}
+  - component: {fileID: 1769372735}
+  - component: {fileID: 1769372734}
+  m_Layer: 0
+  m_Name: cross
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!224 &1769372732
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1769372731}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 10, y: 10, z: 10}
+  m_ConstrainProportionsScale: 1
+  m_Children: []
+  m_Father: {fileID: 908957228}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 3, y: 3}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &1769372734
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1769372731}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_Material: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_RaycastTarget: 1
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: 21300000, guid: d5cf9f51ff9093d4eb659670dd25333e, type: 3}
+  m_Type: 0
+  m_PreserveAspect: 0
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
+--- !u!222 &1769372735
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1769372731}
+  m_CullTransparentMesh: 1
 --- !u!1 &1807920019
 GameObject:
   m_ObjectHideFlags: 0

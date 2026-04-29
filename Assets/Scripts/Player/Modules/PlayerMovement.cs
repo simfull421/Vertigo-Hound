@@ -31,9 +31,9 @@ public sealed class PlayerMovement
     private float xRotation = 0f;
 
     [Header("Camera Recoil")]
-    [Tooltip("반동이 원상복구되는 속도")]
-    public float recoilReturnSpeed = 18f;
-    private float recoilOffset = 0f;
+    [Tooltip("사격 시 카메라가 위로 들리는 속도 (부드러운 반동 적용)")]
+    public float recoilApplySpeed = 30f;
+    private float targetRecoilOffset = 0f;
 
     [Header("Hover Suspension")]
     [Tooltip("캡슐 중심에서 바닥까지 띄울 목표 높이. 캡슐의 extents.y(보통 1)보다 커야 바닥에 닿지 않습니다.")]
@@ -181,14 +181,22 @@ public sealed class PlayerMovement
         float mouseY = lookInput.y * mouseSensitivity;
 
         xRotation -= mouseY;
-        xRotation = Mathf.Clamp(xRotation, maxPitchUp, maxPitchDown);
 
-        recoilOffset = Mathf.Lerp(recoilOffset, 0f, Time.deltaTime * recoilReturnSpeed);
-        float finalPitch = Mathf.Clamp(xRotation + recoilOffset, maxPitchUp, maxPitchDown);
+        // 반동 누적값을 xRotation에 부드럽게 실제 적용 (영구적용되므로 직접 마우스로 내려서 잡아야 함)
+        if (targetRecoilOffset > 0f)
+        {
+            float applyStep = targetRecoilOffset * recoilApplySpeed * Time.deltaTime;
+            applyStep = Mathf.Min(applyStep, targetRecoilOffset); // 오버슛 방지
+            
+            xRotation -= applyStep;
+            targetRecoilOffset -= applyStep;
+        }
+
+        xRotation = Mathf.Clamp(xRotation, maxPitchUp, maxPitchDown);
         
         if (cameraPitchPivot != null)
         {
-            cameraPitchPivot.localRotation = Quaternion.Euler(finalPitch, 0f, 0f);
+            cameraPitchPivot.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
         }
 
         _hub.transform.Rotate(Vector3.up * mouseX);
@@ -196,7 +204,7 @@ public sealed class PlayerMovement
 
     public void AddRecoilPitch(float pitchUp)
     {
-        recoilOffset -= Mathf.Abs(pitchUp);
+        targetRecoilOffset += Mathf.Abs(pitchUp);
     }
 
     private void MovePlayer()

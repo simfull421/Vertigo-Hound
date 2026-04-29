@@ -14,19 +14,31 @@ public class PlayerAudioManager : MonoBehaviour, IPlayerAudioService, IHitAudioS
     public float runVolumeMultiplier = 1.5f; 
 
     [Header("Hit Sounds")]
-    public AudioClip bodyHitClip;
-    public AudioClip headshotClip;
+    public AudioClip[] bodyHitClips;
+    public AudioClip[] headHitClips;
     public float hitVolume = 0.6f;
+    [Tooltip("동시 재생 가능한 히트 사운드 최대 개수")]
+    public int hitAudioPoolSize = 5;
 
     // 중복 재생 방지용 타이머 변수 추가
     private float _lastFootstepTime = 0f;
     private float _footstepCooldown = 0.08f; // 0.08초 안에는 무조건 소리 1번만 남!
 
     private AudioSource _audioSource;
+    private System.Collections.Generic.List<AudioSource> _hitAudioPool = new System.Collections.Generic.List<AudioSource>();
 
     void Awake()
     {
         _audioSource = GetComponent<AudioSource>();
+
+        // 히트 사운드용 오디오 소스 풀 초기화 (GC 방지)
+        for (int i = 0; i < hitAudioPoolSize; i++)
+        {
+            AudioSource newSource = gameObject.AddComponent<AudioSource>();
+            newSource.playOnAwake = false;
+            newSource.spatialBlend = 0f; // 타격음은 2D(UI) 사운드 느낌으로
+            _hitAudioPool.Add(newSource);
+        }
     }
 
     // 인터페이스의 강제 구현 메서드 (PlayerController가 이걸 호출함)
@@ -57,13 +69,32 @@ public class PlayerAudioManager : MonoBehaviour, IPlayerAudioService, IHitAudioS
 
     public void PlayHitAudio(HitSfxType hitType)
     {
-        if (_audioSource == null) return;
+        AudioClip[] targetClips = hitType == HitSfxType.Head ? headHitClips : bodyHitClips;
+        if (targetClips == null || targetClips.Length == 0) return;
 
-        AudioClip clipToPlay = hitType == HitSfxType.Head ? headshotClip : bodyHitClip;
-        if (clipToPlay == null) return;
+        foreach (var clipToPlay in targetClips)
+        {
+            if (clipToPlay == null) continue;
 
-        _audioSource.pitch = 1f;
-        _audioSource.PlayOneShot(clipToPlay, hitVolume);
+            AudioSource availableSource = GetAvailableHitSource();
+            if (availableSource != null)
+            {
+                availableSource.pitch = 1f; // 사용자가 정확한 타격음을 원하므로 피치 랜덤 제거
+                availableSource.clip = clipToPlay;
+                availableSource.volume = hitVolume;
+                availableSource.Play();
+            }
+        }
+    }
+
+    private AudioSource GetAvailableHitSource()
+    {
+        foreach (var source in _hitAudioPool)
+        {
+            if (!source.isPlaying) return source;
+        }
+        // 모든 소스가 재생 중이면 첫 번째 소스를 재사용
+        return _hitAudioPool.Count > 0 ? _hitAudioPool[0] : null;
     }
 
 }

@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using UnityEngine.UI;
 
 public class ViewmodelGunController : MonoBehaviour
 {
@@ -34,13 +35,7 @@ public class ViewmodelGunController : MonoBehaviour
     public float maxSwayAmount = 0.06f;
     public float swaySmooth = 6f;
 
-    [Header("Procedural Recoil (절차적 반동)")]
-    [Tooltip("총 쏠 때 뒤로 밀리는 힘")]
-    public Vector3 recoilKickPos = new Vector3(0, 0, -0.1f);
-    [Tooltip("총 쏠 때 위로 들리는 힘 (X축 회전)")]
-    public Vector3 recoilKickRot = new Vector3(-5f, 0, 0); 
-    public float recoilSnappiness = 20f;  // 반동이 튀어오르는 속도 (빠를수록 타격감 증가)
-    public float recoilReturnSpeed = 10f; // 원래 자리로 돌아오는 속도
+
 
     [Header("Ballistics")]
     [Tooltip("집탄율 (높을수록 널리 퍼짐)")]
@@ -59,6 +54,16 @@ public class ViewmodelGunController : MonoBehaviour
     public float tracerDuration = 0.05f;
     public Transform tracerOrigin;
 
+    [Header("UI Feedback")]
+    public Color bodyHitColor = Color.white;
+    public Color headshotHitColor = Color.red;
+    public float hitMarkerDuration = 0.1f;
+    private Coroutine _hitMarkerCoroutine;
+
+    private CanvasGroup _hitMarkerCanvasGroup;
+    private Image _hitLine1;
+    private Image _hitLine2;
+
     // 내부 상태 변수들
     private float _nextFireTime;
     private bool _isReloading = false;
@@ -70,11 +75,6 @@ public class ViewmodelGunController : MonoBehaviour
     private Vector3 _currentSway;
     private PlayerController _hub;
 
-    // 반동 연산용 변수
-    private Vector3 _recoilTargetPos;
-    private Vector3 _recoilCurrentPos;
-    private Vector3 _recoilTargetRot;
-    private Vector3 _recoilCurrentRot;
     private readonly Queue<LineRenderer> _tracerPool = new Queue<LineRenderer>();
     private int _tracerInstanceCount = 0;
 
@@ -113,6 +113,7 @@ public class ViewmodelGunController : MonoBehaviour
         if (viewmodelCamera != null) _defaultFOV = viewmodelCamera.fieldOfView;
 
         InitializeTracerPool();
+        CreateProceduralHitMarker();
     }
 
     public void UpdateModule()
@@ -134,12 +135,6 @@ public class ViewmodelGunController : MonoBehaviour
         float targetMoveX = Mathf.Clamp(-lookDelta.x * swayAmount, -maxSwayAmount, maxSwayAmount) * swayMultiplier;
         float targetMoveY = Mathf.Clamp(-lookDelta.y * swayAmount, -maxSwayAmount, maxSwayAmount) * swayMultiplier;
         _currentSway = Vector3.Lerp(_currentSway, new Vector3(targetMoveX, targetMoveY, 0), Time.deltaTime * swaySmooth);
-
-        // 3. 반동 복구 연산 (목표치를 항상 0으로 되돌림)
-        _recoilTargetPos = Vector3.Lerp(_recoilTargetPos, Vector3.zero, Time.deltaTime * recoilReturnSpeed);
-        _recoilTargetRot = Vector3.Lerp(_recoilTargetRot, Vector3.zero, Time.deltaTime * recoilReturnSpeed);
-        _recoilCurrentPos = Vector3.Lerp(_recoilCurrentPos, _recoilTargetPos, Time.deltaTime * recoilSnappiness);
-        _recoilCurrentRot = Vector3.Lerp(_recoilCurrentRot, _recoilTargetRot, Time.deltaTime * recoilSnappiness);
 
         if (_isReloading) return;
 
@@ -203,20 +198,14 @@ public class ViewmodelGunController : MonoBehaviour
             }
         }
 
-        // 최종 더하기: Sway(마우스 관성) + Recoil(코딩 반동)
-        weaponRoot.localPosition += _currentSway + _recoilCurrentPos;
-        // 총구가 위로 들리는 회전 반동 추가
-        weaponRoot.localRotation *= Quaternion.Euler(_recoilCurrentRot);
+        // 최종 더하기: Sway(마우스 관성)
+        weaponRoot.localPosition += _currentSway;
     }
 
     private void Shoot()
     {
         currentAmmo--;
         _nextFireTime = Time.time + fireRate;
-        
-        // 절차적 반동(Kick)
-        _recoilTargetPos += recoilKickPos;
-        _recoilTargetRot += recoilKickRot;
 
         if (_hub != null)
         {
@@ -250,6 +239,8 @@ public class ViewmodelGunController : MonoBehaviour
                 {
                     _hub.audioManager.PlayHitAudio(hitZone == HitZone.Head ? HitSfxType.Head : HitSfxType.Body);
                 }
+                
+                TriggerHitMarker(hitZone == HitZone.Head);
 
                 if (ragdoll != null)
                 {
@@ -259,6 +250,7 @@ public class ViewmodelGunController : MonoBehaviour
             else if (ragdoll != null)
             {
                 // EnemyHealth가 없을 경우 레거시 처리: 즉시 풀 레그돌
+                TriggerHitMarker(hitZone == HitZone.Head);
                 ragdoll.ApplyHit(hit.point, shootDirection, totalForce, hitBone, true);
             }
         }
@@ -342,6 +334,71 @@ public class ViewmodelGunController : MonoBehaviour
             tracer.gameObject.SetActive(false);
             _tracerPool.Enqueue(tracer);
         }
+    }
+
+    private void TriggerHitMarker(bool isHeadshot)
+    {
+        if (_hitMarkerCanvasGroup == null) return;
+        
+        if (_hitMarkerCoroutine != null)
+        {
+            StopCoroutine(_hitMarkerCoroutine);
+        }
+        _hitMarkerCoroutine = StartCoroutine(HitMarkerRoutine(isHeadshot));
+    }
+
+    private IEnumerator HitMarkerRoutine(bool isHeadshot)
+    {
+        if (_hitMarkerCanvasGroup == null) yield break;
+
+        Color targetColor = isHeadshot ? headshotHitColor : bodyHitColor;
+        _hitLine1.color = targetColor;
+        _hitLine2.color = targetColor;
+        
+        // 투명도 1로 즉시 설정
+        _hitMarkerCanvasGroup.alpha = 1f;
+
+        float timer = 0f;
+        while (timer < hitMarkerDuration)
+        {
+            timer += Time.deltaTime;
+            _hitMarkerCanvasGroup.alpha = Mathf.Lerp(1f, 0f, timer / hitMarkerDuration);
+            yield return null;
+        }
+
+        _hitMarkerCanvasGroup.alpha = 0f;
+    }
+
+    private void CreateProceduralHitMarker()
+    {
+        GameObject canvasObj = new GameObject("ProceduralHitMarkerCanvas");
+        Canvas canvas = canvasObj.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 100;
+        // 캔버스를 최상단에 배치하기 위해 ViewmodelGunController 하위에 붙임
+        canvasObj.transform.SetParent(transform, false); 
+
+        GameObject markerObj = new GameObject("HitMarkerContainer");
+        markerObj.transform.SetParent(canvasObj.transform, false);
+        markerObj.transform.localPosition = Vector3.zero;
+
+        _hitMarkerCanvasGroup = markerObj.AddComponent<CanvasGroup>();
+        _hitMarkerCanvasGroup.alpha = 0f;
+
+        // 깔끔하게 다듬은 십자선의 두께와 길이 (원하는 핏으로 조절 가능)
+        Vector2 lineSize = new Vector2(2f, 20f); 
+
+        GameObject line1Obj = new GameObject("Line1");
+        line1Obj.transform.SetParent(markerObj.transform, false);
+        _hitLine1 = line1Obj.AddComponent<Image>();
+        _hitLine1.rectTransform.sizeDelta = lineSize;
+        _hitLine1.rectTransform.localRotation = Quaternion.Euler(0, 0, 45f);
+
+        GameObject line2Obj = new GameObject("Line2");
+        line2Obj.transform.SetParent(markerObj.transform, false);
+        _hitLine2 = line2Obj.AddComponent<Image>();
+        _hitLine2.rectTransform.sizeDelta = lineSize;
+        _hitLine2.rectTransform.localRotation = Quaternion.Euler(0, 0, -45f);
     }
 
     private bool NameMatchesToken(string name, string token)
