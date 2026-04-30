@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 /// <summary>
 /// AI의 레그돌 전환 및 피격 처리를 담당합니다.
@@ -26,6 +27,8 @@ public class EnemyRagdollHandler : MonoBehaviour
     private EnemyAnimatorController _animController;
     private Rigidbody _mainRb; // 루트 Rigidbody (EnemyAI에 붙어있는 것)
     private Coroutine _returnCoroutine;
+    private readonly List<Rigidbody> _ragdollBodyBuffer = new List<Rigidbody>(32);
+    private bool _ragdollBodiesCached;
 
     /// <summary>풀 반납 요청 이벤트. AISpawnManager가 구독합니다.</summary>
     public System.Action<EnemyAI> OnReturnToPool;
@@ -41,11 +44,7 @@ public class EnemyRagdollHandler : MonoBehaviour
             animator = _animController.animator;
         }
 
-        // 레그돌 바디 자동 수집 (비어있을 경우)
-        if (ragdollBodies == null || ragdollBodies.Length == 0)
-        {
-            ragdollBodies = GetComponentsInChildren<Rigidbody>();
-        }
+        CacheRagdollBodiesIfNeeded();
 
         if (ragdollBodies != null)
         {
@@ -110,6 +109,8 @@ public class EnemyRagdollHandler : MonoBehaviour
             _returnCoroutine = null;
         }
 
+        CacheRagdollBodiesIfNeeded();
+
         // 1. AI 이동 완전 정지
         Vector3 inertiaVelocity = _enemyAI != null ? _enemyAI.CurrentVelocity : Vector3.zero;
         if (_enemyAI != null)
@@ -159,6 +160,21 @@ public class EnemyRagdollHandler : MonoBehaviour
             rb.isKinematic = false;
             rb.useGravity = true;
         }
+    }
+
+    private void CacheRagdollBodiesIfNeeded()
+    {
+        if (_ragdollBodiesCached) return;
+
+        if (ragdollBodies == null || ragdollBodies.Length == 0)
+        {
+            _ragdollBodyBuffer.Clear();
+            GetComponentsInChildren(true, _ragdollBodyBuffer);
+            ragdollBodies = _ragdollBodyBuffer.ToArray();
+            _ragdollBodyBuffer.Clear();
+        }
+
+        _ragdollBodiesCached = true;
     }
 
     private IEnumerator ReturnToPoolAfterDelay(float delay)
