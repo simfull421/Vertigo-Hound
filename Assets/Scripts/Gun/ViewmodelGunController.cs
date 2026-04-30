@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine.UI;
+using UnityEngine.VFX;
 
 public class ViewmodelGunController : MonoBehaviour
 {
@@ -47,12 +47,12 @@ public class ViewmodelGunController : MonoBehaviour
     [Tooltip("사격 시 카메라 위로 튀는 각도")]
     public float cameraRecoilPitch = 1.5f;
 
-    [Header("Tracer")]
-    public LineRenderer tracerPrefab;
-    public int tracerPoolSize = 12;
-    public int tracerMaxPoolSize = 24;
-    public float tracerDuration = 0.05f;
-    public Transform tracerOrigin;
+    [Header("Tracer (VFX Graph)")]
+    public VisualEffect tracerVfx;
+
+    [Header("Audio")]
+    public AudioSource audioSource;
+    public AudioClip shootClip;
 
     [Header("UI Feedback")]
     public Color bodyHitColor = Color.white;
@@ -74,9 +74,6 @@ public class ViewmodelGunController : MonoBehaviour
     private float _adsWeight = 0f; 
     private Vector3 _currentSway;
     private PlayerController _hub;
-
-    private readonly Queue<LineRenderer> _tracerPool = new Queue<LineRenderer>();
-    private int _tracerInstanceCount = 0;
 
     // [수정] Fire 해시는 이제 애니메이터에서 안 쓰므로 지웠습니다.
     private readonly int hashReload = Animator.StringToHash("TriggerReload");
@@ -112,7 +109,7 @@ public class ViewmodelGunController : MonoBehaviour
 
         if (viewmodelCamera != null) _defaultFOV = viewmodelCamera.fieldOfView;
 
-        InitializeTracerPool();
+        if (audioSource == null) audioSource = GetComponent<AudioSource>();
         CreateProceduralHitMarker();
     }
 
@@ -212,6 +209,17 @@ public class ViewmodelGunController : MonoBehaviour
             _hub.movement.AddRecoilPitch(cameraRecoilPitch);
         }
 
+        if (audioSource != null && shootClip != null)
+        {
+            audioSource.pitch = Random.Range(0.95f, 1.05f);
+            audioSource.PlayOneShot(shootClip);
+        }
+
+        if (tracerVfx != null)
+        {
+            tracerVfx.SendEvent("OnShoot");
+        }
+
         // 총구 방향(forward)에 랜덤한 퍼짐(Spread) 값 추가
         Vector3 spread = UnityEngine.Random.insideUnitSphere * spreadAngle;
         if (mainCameraTransform == null) return;
@@ -255,7 +263,6 @@ public class ViewmodelGunController : MonoBehaviour
             }
         }
 
-        SpawnTracer(rayOrigin, tracerEnd);
     }
 
     private IEnumerator ReloadRoutine()
@@ -287,53 +294,6 @@ public class ViewmodelGunController : MonoBehaviour
         if (NameMatchesToken(name, "body")) return HitZone.Body;
 
         return HitZone.Body;
-    }
-
-    private void InitializeTracerPool()
-    {
-        if (tracerPrefab == null || tracerPoolSize <= 0) return;
-
-        int initialCount = Mathf.Min(tracerPoolSize, tracerMaxPoolSize);
-        for (int i = 0; i < initialCount; i++)
-        {
-            LineRenderer tracer = Instantiate(tracerPrefab, transform);
-            tracer.gameObject.SetActive(false);
-            _tracerPool.Enqueue(tracer);
-        }
-        _tracerInstanceCount = initialCount;
-    }
-
-    private void SpawnTracer(Vector3 start, Vector3 end)
-    {
-        // 풀을 동적 확장하고, tracerMaxPoolSize 초과 시 렌더를 건너뛰며 tracerOrigin이 있으면 start를 대체합니다.
-        if (tracerPrefab == null) return;
-        if (_tracerPool.Count == 0)
-        {
-            if (_tracerInstanceCount >= tracerMaxPoolSize) return;
-            LineRenderer extraTracer = Instantiate(tracerPrefab, transform);
-            extraTracer.gameObject.SetActive(false);
-            _tracerPool.Enqueue(extraTracer);
-            _tracerInstanceCount++;
-        }
-
-        LineRenderer tracer = _tracerPool.Dequeue();
-        tracer.gameObject.SetActive(true);
-
-        Vector3 origin = tracerOrigin != null ? tracerOrigin.position : start;
-        tracer.SetPosition(0, origin);
-        tracer.SetPosition(1, end);
-
-        StartCoroutine(DisableTracerAfter(tracer, tracerDuration));
-    }
-
-    private IEnumerator DisableTracerAfter(LineRenderer tracer, float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        if (tracer != null)
-        {
-            tracer.gameObject.SetActive(false);
-            _tracerPool.Enqueue(tracer);
-        }
     }
 
     private void TriggerHitMarker(bool isHeadshot)

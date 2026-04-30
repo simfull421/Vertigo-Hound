@@ -1,6 +1,5 @@
 using UnityEngine;
 using Pathfinding;
-using Pathfinding.RVO;
 
 /// <summary>
 /// A* Pathfinding Project 기반 추적 AI.
@@ -41,8 +40,7 @@ public class EnemyAI : MonoBehaviour
     public int aiType = 0;
 
     // ── 컴포넌트 ──
-    private IAstarAI _ai;
-    private RVOController _rvo;
+    private FollowerEntity _ai;
     private AILocomotionController _locomotion;
     private EnemyAnimatorController _animController;
     private EnemyRagdollHandler _ragdollHandler;
@@ -85,11 +83,10 @@ public class EnemyAI : MonoBehaviour
     {
         _playerTransform = playerTransform;
 
-        if (_ai == null) _ai = GetComponent<IAstarAI>();
-        if (_rvo == null) _rvo = GetComponent<RVOController>();
+        if (_ai == null) _ai = GetComponent<FollowerEntity>();
         if (_locomotion == null && _ai != null)
         {
-            _locomotion = new AILocomotionController(_ai, _rvo, transform);
+            _locomotion = new AILocomotionController(_ai, transform);
         }
         if (_animController == null) _animController = GetComponent<EnemyAnimatorController>();
         if (_ragdollHandler == null) _ragdollHandler = GetComponent<EnemyRagdollHandler>();
@@ -104,7 +101,7 @@ public class EnemyAI : MonoBehaviour
 
         if (_animController != null) _animController.SetLookAtTarget(playerTransform);
 
-        if (_ai == null) Debug.LogError($"[EnemyAI] IAstarAI(AIPath/RichAI) 없음! ({gameObject.name})");
+        if (_ai == null) Debug.LogError($"[EnemyAI] FollowerEntity 없음! ({gameObject.name})");
 
         _isInitialized = true;
     }
