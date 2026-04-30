@@ -39,7 +39,9 @@ public sealed class AILocomotionController
         if (desired.sqrMagnitude < DirectionEpsilon)
         {
             Vector3 destination = _ai.destination;
-            if (destination != Vector3.positiveInfinity)
+            if (!float.IsPositiveInfinity(destination.x)
+                && !float.IsPositiveInfinity(destination.y)
+                && !float.IsPositiveInfinity(destination.z))
             {
                 Vector3 toTarget = destination - _transform.position;
                 toTarget.y = 0f;

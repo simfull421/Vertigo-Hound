@@ -209,6 +209,7 @@ public class ViewmodelGunController : MonoBehaviour
             _hub.movement.AddRecoilPitch(cameraRecoilPitch);
         }
 
+        if (audioSource == null) audioSource = GetComponent<AudioSource>();
         if (audioSource != null && shootClip != null)
         {
             audioSource.pitch = Random.Range(0.95f, 1.05f);
