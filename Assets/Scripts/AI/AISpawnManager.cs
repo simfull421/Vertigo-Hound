@@ -97,8 +97,7 @@ public class AISpawnManager : MonoBehaviour
             }
 
             // [순서 중요] Initialize()를 SetActive(false) 이전에 호출
-            // → GetComponent<IAstarAI>() 등 인터페이스 기반 검색은
-            //   오브젝트가 활성 상태일 때만 안정적으로 작동합니다.
+            // → 컴포넌트 초기화는 오브젝트가 활성 상태일 때 가장 안정적으로 작동합니다.
             ai.Initialize(playerTransform);
 
             // 레그돌 핸들러에 풀 반납 이벤트 구독

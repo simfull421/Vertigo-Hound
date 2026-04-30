@@ -5,7 +5,7 @@ using Pathfinding;
 /// A* Pathfinding Project 기반 추적 AI.
 /// 
 /// [아키텍처]
-/// - IAstarAI(AIPath/RichAI 등): 경로 계산 + 이동 전담
+/// - FollowerEntity: 경로 계산 + 이동 전담
 /// - AILocomotionController: 이동 제어, 정지/재개 제어
 /// </summary>
 public class EnemyAI : MonoBehaviour
