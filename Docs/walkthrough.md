@@ -1,220 +1,117 @@
-핵심은 “층 생성기(Floor Generator)” + “빌딩 스택커(Stacker)”를 완전히 분리하는 것이다.
-여기서 필요한 건 복잡한 수학이 아니라, 좌표계 + 시드 기반 결정 함수 + 규칙 그래프다.
+1. 전투 및 피격 시스템 (Combat & Hit Feedback)
+"불쾌한 물리 버그는 배제하고, 가볍고 확실한 타격감과 변수를 창출한다."
 
-아래를 그대로 설계하면 바로 에디터 툴로 옮길 수 있다.
+상체 부분 피격 (Partial Hit Reaction)
 
-0. 전체 구조 (중요)
-툴 2개 구조
-① Floor Generator (1층 생성기)
-입력:
-seed
-grid size
-룸 규칙
-출력:
-1층 프리팹 (또는 GameObject 트리)
-② Building Stacker (층 적재기)
-입력:
-floor prefab
-total floors
-출력:
-다층 건물
-1. 핵심 수학: 좌표 시스템 (Grid → World)
-기본 공식
-Vector3 WorldPos(int x, int z, int yLevel)
-{
-    return new Vector3(
-        x * cellSize,
-        yLevel * floorHeight,
-        z * cellSize
-    );
-}
-의미
-x, z → 평면 배치
-yLevel → 층 번호
-cellSize → 타일 크기 (예: 4m)
-floorHeight → 층 높이 (예: 3.5~4m)
+방식: 물리 엔진(Ragdoll) 대신 유니티 Animator의 '상체 마스크(Upper Body Mask)'를 활용.
 
-👉 이거 하나로 모든 배치 해결됨
+로직: 총격 명중 시 레이캐스트가 맞춘 뼈(Bone)의 이름을 판별하여 머리/몸통/왼팔/오른팔에 맞는 짧은 피격 애니메이션(CrossFade)을 강제 실행.
 
-2. 1층 생성 알고리즘 (Floor Generator)
-핵심: “룰 기반 타일 배치”
-Step 1: Grid 선언
-int width = 5;
-int height = 5;
+IK 제어: 머리를 맞았을 경우 0.5초간 플레이어를 바라보는 IK(LookAt)를 차단하여 고개가 뒤로 확 젖혀지는 타격감을 강조.
 
-CellType[,] grid = new CellType[width, height];
-Step 2: 기본 구조 배치 (Deterministic)
+공중 격추 넉다운 (Airborne Knockdown)
 
-👉 이건 랜덤 아님 (항상 동일해야 플레이 가능)
+방식: AI가 플레이어를 향해 점프/구르기 공격을 하는 도중 피격당하면 추락.
 
-예:
+로직: 애니메이션을 즉시 끄고 '전체 레그돌'을 활성화하여 바닥에 나뒹굴게 함 (2.5초 유지).
 
-중앙 = 핵심 영역
-한쪽 = 계단
-grid[0, 2] = CellType.Stair;
-grid[2, 2] = CellType.Core;
-Step 3: 시드 기반 랜덤 (핵심)
-랜덤 초기화
-System.Random rng = new System.Random(seed);
-랜덤 규칙 (예시)
-방 / 복도 생성
-for (int x = 0; x < width; x++)
-{
-    for (int z = 0; z < height; z++)
-    {
-        if (grid[x, z] != CellType.Empty) continue;
+복구(GetUp): 레그돌 종료 시, AI 본체(Root)의 좌표를 굴러간 골반(Hips) 뼈 위치로 강제 동기화(Teleport 방지)한 후 일어나는 애니메이션 재생.
 
-        int roll = rng.Next(0, 100);
+피격 이펙트 (VFX)
 
-        if (roll < 60)
-            grid[x, z] = CellType.Room;
-        else
-            grid[x, z] = CellType.Hallway;
-    }
-}
-Step 4: 연결성 보장 (중요)
+방식: 심의(전체/12세 이용가)를 고려하여 유혈(Blood) 묘사 배제.
 
-👉 이거 없으면 맵 망함
+로직: 피격 지점에 노란색/주황색의 강렬한 스파크(Sparks) 및 둔탁한 먼지(Dust) 파티클을 짧게 발생시켜 타격감과 시각적 피드백 극대화.
 
-Flood Fill or BFS 사용
-시작점: Stair
-모든 타일 reachable 확인
-bool IsConnected()
-{
-    // BFS 돌려서 전부 방문 가능한지 체크
-}
+2. 플레이어 농락 AI 시스템 (Trolling AI & Runaway)
+"플레이어에게 강력한 동기부여(분노)를 제공하는 상호작용"
 
-👉 실패하면:
+파운딩 및 키 강탈 (Pounding & Steal)
 
-seed++;
-다시 생성
-3. 프리팹 배치 알고리즘
-셀 → 프리팹 매핑
-GameObject GetPrefab(CellType type)
-{
-    switch(type)
-    {
-        case CellType.Room: return roomPrefab;
-        case CellType.Hallway: return hallwayPrefab;
-        case CellType.Stair: return stairPrefab;
-    }
-}
-Instantiate 루프
-for (int x = 0; x < width; x++)
-{
-    for (int z = 0; z < height; z++)
-    {
-        var prefab = GetPrefab(grid[x,z]);
+상황: AI의 공격(트리거)에 플레이어가 닿으면 발생.
 
-        Vector3 pos = WorldPos(x, z, 0);
+연출: 플레이어의 이동이 잠기고 카메라가 바닥(-2Y)으로 내려감. 게임 속도를 절반(Time.timeScale = 0.5f)으로 줄여 슬로우 모션 연출.
 
-        Instantiate(prefab, pos, Quaternion.identity, parent);
-    }
-}
-4. 계단 문제 (핵심 질문)
+인터랙션: 스페이스바 연타 QTE 발생. 실패하거나 일정 시간 피격당하면 플레이어가 소지한 '키(Key)'를 AI에게 탈취당함.
 
-맞다.
-계단은 큐브 스케일로 해결 못 한다.
+키 패스 및 런어웨이 (Key Passing & Runaway)
 
-정답
+로직: 키를 든 AI는 플레이어와 일정 거리 이상 가까워지면 주변의 다른 AI를 타겟으로 지정.
 
-👉 계단은 “완성된 프리팹”으로 취급
+패스: 상체 던지기 애니메이션을 실행하며, 키 오브젝트(World Space UI 핑 'A' 표시)가 타겟 AI를 향해 날아감 (DOTween 등 활용).
 
-왜?
-경사각 중요
-플레이 테스트 필요
-파쿠르 타이밍 영향
-확장 설계
-enum StairType
-{
-    DogLeg,
-    Spiral,
-    Broken
-}
-StairType stair = (StairType)(rng.Next(0, 3));
+추격: 플레이어는 핑을 보며 키를 가진 AI를 계속 쫓아가 다시 탈환해야 함.
 
-👉 층마다 계단 변형 가능
+조롱 및 감정 표현 (Taunting - Dance & Face)
 
-5. 층 적재 알고리즘 (Stacker)
-핵심 공식
-for (int i = 0; i < totalFloors; i++)
-{
-    Vector3 pos = new Vector3(0, i * floorHeight, 0);
+로직: 키를 성공적으로 다른 AI에게 패스한 직후, 해당 AI는 도망가지 않고 그 자리에 서서 조롱(춤추기) 애니메이션을 실행.
 
-    GameObject floor = Instantiate(floorPrefab, pos, Quaternion.identity);
+표정: 춤을 출 때 캐릭터 얼굴 앞의 투명 Quad 텍스처를 '비웃는 이빨/표정'으로 교체하여 플레이어의 도발 수치를 극대화.
 
-    SetFloorNumber(floor, i + 1);
-}
-6. 층수 텍스트 자동화
-void SetFloorNumber(GameObject floor, int level)
-{
-    var texts = floor.GetComponentsInChildren<TextMeshPro>();
+3. 탈출 및 클라이맥스 (Escape Sequence)
+"파쿠르와 추격전의 결실을 맺는 시네마틱한 탈출"
 
-    foreach (var t in texts)
-    {
-        t.text = level + " F";
-    }
-}
-7. 시드 시스템 설계 (중요)
-핵심 개념
+비상 셔터 탈출 (Emergency Shutter Sliding)
 
-👉 “층마다 시드 다르게”
+상황: 키를 최종적으로 확보한 플레이어는 점점 닫히고 있는 맵 끝의 비상 셔터로 달려가야 함.
 
-방법 1 (추천)
-int floorSeed = baseSeed + floorIndex;
-방법 2 (더 강력)
-int floorSeed = Hash(baseSeed, floorIndex);
+연출: 닫히기 직전의 틈새를 슬라이딩 파쿠르 액션으로 빠져나가며 스테이지 클리어.
 
-예:
+목적: 단순히 적을 죽이는 FPS가 아니라, 목표물 탈환과 탈출이라는 쫄깃한 스피드런/아케이드 요소를 제공.
 
-int Hash(int a, int b)
-{
-    return a * 73856093 ^ b * 19349663;
-}
+4. 핑 및 추적 시스템 (Ping & Tracking System)
+"AI가 키를 들고 도망가더라도 직관적으로 위치를 파악하고 추격할 수 있게 한다."
 
-👉 결과:
+핑 비주얼 디자인 (Visuals)
 
-같은 baseSeed → 항상 같은 건물
-디버깅 가능
-8. 고급: 변형 규칙 (Replayability)
-1. 파괴 지점 랜덤
-if (rng.Next(0,100) < 20)
-    SpawnBrokenWall(x,z);
-2. 창문 위치
-if (IsEdge(x,z) && rng.Next(0,100) < 30)
-    SpawnWindow();
-3. 막힌 루트 생성
-if (rng.Next(0,100) < 15)
-    BlockStairAccess();
-9. 에디터 툴 구조 (실전)
-ScriptableObject 추천
-[CreateAssetMenu]
-class FloorConfig : ScriptableObject
-{
-    public int width;
-    public int height;
-    public float cellSize;
-    public float floorHeight;
-}
-에디터 버튼
-[ContextMenu("Generate Floor")]
-void GenerateFloor()
-[ContextMenu("Build Tower")]
-void BuildTower()
-10. 핵심 정리 (중요)
-❌ 잘못된 접근
-큐브로 모든 걸 해결하려는 것
-프로빌더 런타임 제어
-✅ 정답 구조
-프리팹 = “조각”
-Grid = “설계도”
-Seed = “변형”
-Loop = “생산라인”
-한 줄 요약
+아이콘: 유니티 기본 knob 이미지를 활용한 원형 심볼. 노란색 바탕에 검은색 테두리를 입혀 시인성을 확보.
 
-👉 “좌표 = 산수, 구조 = 규칙, 다양성 = 시드”
+텍스트: 원 중심에 검은색 대문자 'A' 표기 (데이터 자료 등 목표물 상징).
 
-문제 (병목 현상): 1층에 프리팹 조각(방, 복도, 계단)이 25개 들어간다고 칩시다. 50층이면 1,250개의 개별 오브젝트(GameObject)가 생깁니다. 유니티는 이 1,250개의 조각을 화면에 그릴 때마다 그래픽 카드에 "이거 그려라"라고 1,250번의 명령(Draw Call)을 보냅니다. 최적화가 박살 납니다.
+거리(Meter) 표시: 아이콘 하단 혹은 옆에 검은색 배경 + 흰색 글씨로 실시간 거리(dist.ToString("F0") + "m") 표시. 에이펙스와 유사하게 배경의 투명도를 살짝 주어 가독성 유지.
 
-해결책 (Static Batching): Stacker가 50층 건물을 다 만들고 난 직후, 코드로 생성된 모든 프리팹(방, 복도 외벽 등)의 속성을 isStatic = true로 묶어주거나, 유니티의 StaticBatchingUtility.Combine API를 호출하는 로직을 마지막 Step에 딱 한 줄 추가하십시오.
-이렇게 하면 1,250개의 조각이 그래픽 카드 입장에서는 '거대한 건물 덩어리 1개'로 인식되어, 프레임 저하 없이 쾌적한 파쿠르가 가능해집니다.
+에이펙스 스타일 UI 로직 (UI Logic)
+
+동적 스케일링: 아이콘이 화면 중앙(조준점 부근)에 올수록 크기가 커지고, 화면 가장자리로 갈수록 작아져 시야 방해를 최소화함.
+
+화면 밖 타겟팅 (Off-screen Indicator): 키를 가진 AI가 플레이어의 시야(FOV) 밖으로 벗어나면, 핑 아이콘을 화면 가장자리(Edge)에 고정.
+
+좌표 계산: WorldToScreenPoint를 활용해 타겟이 화면 왼쪽인지 오른쪽인지 판별하여 화살표 인디케이터와 함께 거리 정보를 계속 노출.
+
+효과: 유저는 키를 든 AI가 어느 방향으로 도망치는지 즉각적으로 눈치채고 파쿠르 추격전을 시작할 수 있음.
+
+5. 게임플레이 루프 및 최종 목표 (Gameplay Loop & Objective)
+"킹받는 AI들과의 술래잡기 끝에 얻는 카타르시스"
+
+미션 흐름 (Mission Flow)
+
+침투 및 탐색: 맵 내부에서 데이터 키(Key)가 있는 위치를 탐색.
+
+탈취 및 억까: 키를 얻는 순간 주변 AI들이 활성화되며 '바지끄댕이 잡기', '파운딩' 등으로 방해 시작.
+
+키 쟁탈전: AI에게 키를 뺏기면, 핑 시스템을 활용해 키를 들고 튀거나 서로 패스하며 조롱하는 AI들을 추격하여 재탈환.
+
+클라이맥스: 키를 확보한 상태에서 서서히 닫히는 비상 셔터 구역으로 전력 질주.
+
+탈출: 닫히기 직전의 셔터 밑을 슬라이딩으로 통과하여 스테이지 클리어.
+
+성장 및 난이도 설계
+
+재미 요소: 단순히 적을 죽이는 것이 아니라, 뺏고 뺏기는 과정에서의 우스꽝스러운 상황(춤추는 AI, 씨익 웃는 표정 등)이 바이럴 요소가 됨.
+
+확장성: 다음 난이도에서는 AI의 패스 속도가 빨라지거나, 셔터가 닫히는 시간이 단축되는 식으로 긴장감 조절.
+
+전체이용가/대중성 고려
+
+복잡한 시스템보다는 '잡히면 뺏긴다, 뺏기면 쫓는다'는 본능적인 재미에 집중.
+
+하얀 연기/스파크 이펙트와 익살스러운 표정 연출로 리얼리티보다는 스타일리시한 액션 게임의 톤을 유지.
+
+💡 보너스: 핑 좌표 계산 힌트 (코드 레벨)
+화면 밖 핑 표시를 위해 필요한 로직은 대략 다음과 같습니다.
+
+Camera.main.WorldToViewportPoint(target.position)를 사용하여 타겟의 위치를 0~1 사이의 값으로 변환합니다.
+
+이 값이 0보다 작거나 1보다 크면 화면 밖으로 나간 것입니다.
+
+Mathf.Clamp를 사용하여 아이콘 좌표를 화면 가장자리(예: 0.05 ~ 0.95)에 고정시키고, 중심점과의 벡터 연산을 통해 화살표 각도를 구하면 됩니다.

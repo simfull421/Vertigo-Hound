@@ -1,12 +1,11 @@
 using UnityEngine;
 using Pathfinding;
-using Pathfinding.RVO;
 
 /// <summary>
 /// A* Pathfinding Project 기반 추적 AI.
 /// 
 /// [아키텍처]
-/// - IAstarAI(AIPath/RichAI 등): 경로 계산 + 이동 전담
+/// - FollowerEntity: 경로 계산, 이동, 로컬 회피(RVO) 통합 처리
 /// - AILocomotionController: 이동 제어, 정지/재개 제어
 /// </summary>
 public class EnemyAI : MonoBehaviour
@@ -41,8 +40,7 @@ public class EnemyAI : MonoBehaviour
     public int aiType = 0;
 
     // ── 컴포넌트 ──
-    private IAstarAI _ai;
-    private RVOController _rvo;
+    private FollowerEntity _ai; // IAstarAI, RVOController를 하나로 통합
     private AILocomotionController _locomotion;
     private EnemyAnimatorController _animController;
     private EnemyRagdollHandler _ragdollHandler;
@@ -74,6 +72,9 @@ public class EnemyAI : MonoBehaviour
         Stumbling,   // 넘어져서 미끄러지는 중
         GettingUp,   // 일어나는 중 (애니메이션 대기)
         Attacking,   // 점프 허그
+        KnockedDown, // 공중 피격 등 강제 레그돌 상태
+        Fleeing,     // 키 뺏고 도망감
+        Taunting,    // 패스 후 춤추며 조롱
         Dead
     }
 
@@ -85,12 +86,15 @@ public class EnemyAI : MonoBehaviour
     {
         _playerTransform = playerTransform;
 
-        if (_ai == null) _ai = GetComponent<IAstarAI>();
-        if (_rvo == null) _rvo = GetComponent<RVOController>();
+        // 최신 FollowerEntity 하나만 수집
+        if (_ai == null) _ai = GetComponent<FollowerEntity>();
+        
         if (_locomotion == null && _ai != null)
         {
-            _locomotion = new AILocomotionController(_ai, _rvo, transform);
+            // RVO 파라미터가 제거되고 FollowerEntity 하나만 전달
+            _locomotion = new AILocomotionController(_ai, transform);
         }
+        
         if (_animController == null) _animController = GetComponent<EnemyAnimatorController>();
         if (_ragdollHandler == null) _ragdollHandler = GetComponent<EnemyRagdollHandler>();
         if (_enemyHealth == null)
@@ -104,7 +108,7 @@ public class EnemyAI : MonoBehaviour
 
         if (_animController != null) _animController.SetLookAtTarget(playerTransform);
 
-        if (_ai == null) Debug.LogError($"[EnemyAI] IAstarAI(AIPath/RichAI) 없음! ({gameObject.name})");
+        if (_ai == null) Debug.LogError($"[EnemyAI] FollowerEntity 컴포넌트 없음! ({gameObject.name})");
 
         _isInitialized = true;
     }
@@ -146,6 +150,42 @@ public class EnemyAI : MonoBehaviour
         gameObject.SetActive(false);
     }
 
+    public void NotifyKnockdown()
+    {
+        CurrentState = EnemyState.KnockedDown;
+        if (_locomotion != null) _locomotion.PauseMovement();
+    }
+
+    public void RecoverFromKnockdown()
+    {
+        CurrentState = EnemyState.GettingUp;
+        if (_locomotion != null) _locomotion.PauseMovement();
+        if (_animController != null) _animController.TriggerGetUp();
+    }
+
+    public bool IsAirborne()
+    {
+        // 현재 점프 허그 공격 중일 때를 공중 상태로 간주
+        return CurrentState == EnemyState.Attacking;
+    }
+
+    public void SetState(EnemyState newState)
+    {
+        CurrentState = newState;
+        if (newState == EnemyState.Fleeing)
+        {
+            if (_locomotion != null) _locomotion.ResumeMovement();
+        }
+        else if (newState == EnemyState.Taunting)
+        {
+            if (_locomotion != null) _locomotion.PauseMovement();
+            if (_animController != null && _animController.animator != null)
+            {
+                _animController.animator.SetTrigger("TriggerDance"); // 춤 애니메이션
+            }
+        }
+    }
+
     // ══════════════════════════════════════════════
     //  Update
     // ══════════════════════════════════════════════
@@ -179,6 +219,13 @@ public class EnemyAI : MonoBehaviour
                 {
                     OnAttackAnimationEnd();
                 }
+                break;
+            case EnemyState.Fleeing:
+                UpdateFleeing();
+                break;
+            case EnemyState.Taunting:
+                // 조롱 중에는 플레이어 쪽을 계속 쳐다보도록
+                if (_animController != null) _animController.SetLookAtTarget(_playerTransform);
                 break;
         }
 
@@ -217,6 +264,26 @@ public class EnemyAI : MonoBehaviour
         if (dist <= attackRange && _attackCooldownTimer <= 0f)
         {
             TriggerAttack();
+        }
+    }
+
+    // ══════════════════════════════════════════════
+    //  Fleeing
+    // ══════════════════════════════════════════════
+    private void UpdateFleeing()
+    {
+        _destinationTimer -= Time.deltaTime;
+        if (_destinationTimer <= 0f)
+        {
+            _destinationTimer = destinationUpdateInterval;
+            if (_playerTransform != null && _locomotion != null)
+            {
+                // 플레이어 반대 방향으로 10m 도망
+                Vector3 dirFromPlayer = (transform.position - _playerTransform.position).normalized;
+                dirFromPlayer.y = 0f;
+                Vector3 fleePos = transform.position + dirFromPlayer * 10f;
+                _locomotion.SetDestination(fleePos);
+            }
         }
     }
 

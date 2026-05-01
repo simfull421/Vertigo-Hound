@@ -321,14 +321,27 @@ public sealed class PlayerAnimatorHandler
         Vector3 origin = _hub.transform.position + Vector3.up;
         if (Physics.SphereCast(origin, kickRadius, _hub.transform.forward, out RaycastHit hit, kickRange))
         {
+            var health = hit.collider.GetComponentInParent<EnemyHealth>();
             var ragdoll = hit.collider.GetComponentInParent<EnemyRagdollHandler>();
+
             if (ragdoll != null)
             {
                 Rigidbody hitBone = hit.collider.attachedRigidbody;
-                // ForceMode.VelocityChange를 사용하여 질량 무시하고 공처럼 시원하게 날려보냄
-                ragdoll.ApplyHit(hit.point, _hub.transform.forward, kickForce, hitBone);
+                bool isDead = false;
+
+                // 발차기 데미지 적용 (예: 20)
+                if (health != null)
+                {
+                    isDead = !health.TakeHit(20f, hit.point, _hub.transform.forward, hitBone);
+                }
+
+                // 사망 시에만 레그돌이 되도록 분기 처리 및 최신 API 적용
+                if (isDead)
+                {
+                    ragdoll.ApplyDeathRagdoll(hit.point, _hub.transform.forward, kickForce, hitBone);
+                }
                 
-                // 타격 성공 시 카메라 킥 주스(흔들림/Z축 회전) 발동
+                // 타격 성공 시 카메라 킥 주스 발동
                 if (_hub.juiceController != null)
                 {
                     _hub.juiceController.TriggerKickJuice();

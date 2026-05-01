@@ -1,44 +1,17 @@
 using UnityEngine;
 
-/// <summary>
-/// AI의 Animator 파라미터를 동기화하는 컨트롤러.
-/// 
-/// [Animator Controller 구조 (Unity 에디터에서 수동 생성)]
-/// - Locomotion (BlendTree): Speed 파라미터로 Idle/Walk/Run 블렌딩
-/// - Stumble 상태: TriggerStumble로 진입
-/// - GetUp 상태: TriggerGetUp으로 진입, 클립 끝에 OnGetUpAnimationEnd 이벤트
-/// - Locomotion 복귀: GetUp 클립 종료 시
-/// 
-/// [파라미터 목록]
-/// - Speed (Float): 블렌드 트리 구동 (0~1 정규화)
-/// - MoveMultiplier (Float): 애니메이션 재생 속도 배율
-/// - AiType (Int): AI 타입 (0: 인간형, 1: 사족보행)
-/// - TriggerStumble (Trigger): 넘어짐
-/// - TriggerGetUp (Trigger): 일어남
-/// 
-/// [IK]
-/// - Head LookAt: 플레이어를 향해 고개를 돌림 (IK Pass 필수)
-/// 
-/// [사망 처리]
-/// 사망 시 애니메이션 없이 바로 레그돌로 전환됩니다 (DisableAnimator 호출).
-/// </summary>
 public class EnemyAnimatorController : MonoBehaviour
 {
     [Header("Components")]
-    [Tooltip("AI 모델에 붙어있는 Animator")]
     public Animator animator;
 
     [Header("IK Settings")]
-    [Tooltip("플레이어를 향해 고개를 돌리는 LookAt IK 활성화")]
     public bool useLookAtIK = true;
-    [Tooltip("전체 LookAt 가중치 (0: 끔, 1: 완전)")]
     public float lookAtWeight = 1.0f;
-    [Tooltip("몸통 회전 가중치 (낮으면 몸은 거의 안 돌아감)")]
     public float bodyWeight = 0.2f;
-    [Tooltip("머리 회전 가중치 (높으면 고개가 많이 돌아감)")]
     public float headWeight = 0.8f;
 
-    // Animator 해시값 (문자열보다 조회 속도가 빠름)
+    // Animator 해시값
     private readonly int hashSpeed = Animator.StringToHash("Speed");
     private readonly int hashMoveMultiplier = Animator.StringToHash("MoveMultiplier");
     private readonly int hashAiType = Animator.StringToHash("AiType");
@@ -47,131 +20,148 @@ public class EnemyAnimatorController : MonoBehaviour
     private readonly int hashTriggerGetUp = Animator.StringToHash("TriggerGetUp");
     private readonly int hashTriggerAttack = Animator.StringToHash("TriggerAttack");
 
-    // SmoothDamp용 변수
+    [Header("Hit Animation State Names")]
+    [Tooltip("Animator에 띄워둔 피격 State 이름들을 정확히 적어주세요.")]
+    public string[] headHitStates = { "Hit_Head_01", "Hit_Head_02" }; // 대가리 여러 개 가능!
+    public string[] bodyHitStates = { "Hit_Body" };
+    public string[] leftArmHitStates = { "Hit_LeftArm" };
+    public string[] rightArmHitStates = { "Hit_RightArm" };
+
+    [Tooltip("피격 애니메이션이 들어있는 레이어 인덱스 (보통 Base가 0, HitLayer가 1)")]
+    public int hitLayerIndex = 1;
+
     private float _currentSpeed;
     private float _speedVelocity;
     private float _currentMultiplier = 1f;
     private float _multiplierVelocity;
-
-    // IK 타겟 (플레이어)
     private Transform _lookAtTarget;
-
-    [Tooltip("애니메이션 파라미터 보간 시간 (SmoothDamp)")]
     public float smoothTime = 0.1f;
 
-    /// <summary>
-    /// IK LookAt 대상 설정. EnemyAI.Initialize()에서 호출.
-    /// </summary>
+    // [추가] 피격 시 IK를 잠시 풀어서 모가지가 고정되는 걸 막는 타이머
+    private float _ikBlockTimer = 0f;
+
     public void SetLookAtTarget(Transform target)
     {
         _lookAtTarget = target;
     }
 
-    /// <summary>
-    /// 풀에서 활성화될 때 호출. Animator 리셋 및 타입 설정.
-    /// </summary>
     public void Activate(int aiType)
     {
         if (animator == null)
         {
             animator = GetComponentInChildren<Animator>();
-            if (animator == null)
-            {
-                Debug.LogError("[EnemyAnimatorController] Animator를 찾을 수 없습니다!");
-                return;
-            }
+            if (animator == null) return;
         }
 
         animator.enabled = true;
         animator.Rebind();
         animator.Update(0f);
-
-        // AI 타입 설정 (인간형/사족보행)
         animator.SetInteger(hashAiType, aiType);
 
         _currentSpeed = 0f;
         _currentMultiplier = 1f;
+        _ikBlockTimer = 0f;
     }
 
-    /// <summary>
-    /// 속도 파라미터 설정 (0~1 정규화된 값).
-    /// </summary>
-    public void SetSpeed(float normalizedSpeed)
+    void Update()
     {
-        if (animator == null || !animator.enabled) return;
+        // 피격 타이머 감소
+        if (_ikBlockTimer > 0f)
+        {
+            _ikBlockTimer -= Time.deltaTime;
+        }
+    }
 
+    public void SetSpeed(float normalizedSpeed) { /* 기존과 동일 생략 가능하지만 구조유지 */
+        if (animator == null || !animator.enabled) return;
         _currentSpeed = Mathf.SmoothDamp(_currentSpeed, normalizedSpeed, ref _speedVelocity, smoothTime);
         animator.SetFloat(hashSpeed, _currentSpeed);
     }
 
-    /// <summary>
-    /// 애니메이션 배속 설정.
-    /// </summary>
-    public void SetMoveMultiplier(float multiplier)
-    {
+    public void SetMoveMultiplier(float multiplier) {
         if (animator == null || !animator.enabled) return;
-
         _currentMultiplier = Mathf.SmoothDamp(_currentMultiplier, multiplier, ref _multiplierVelocity, smoothTime);
         animator.SetFloat(hashMoveMultiplier, _currentMultiplier);
     }
 
-
-
-    /// <summary>
-    /// 넘어짐 애니메이션 트리거.
-    /// variant: 0~N-1 랜덤 인덱스. Animator에서 StumbleIndex로 분기하여
-    /// 각각 다른 넘어짐 클립을 재생합니다.
-    /// 짧은 넘어짐은 바로 Locomotion으로, 긴 넘어짐은 GetUp을 거칩니다.
-    /// </summary>
-    public void TriggerStumble(int variant)
-    {
+    public void TriggerStumble(int variant) {
         if (animator == null || !animator.enabled) return;
         animator.SetInteger(hashStumbleIndex, variant);
         animator.SetTrigger(hashTriggerStumble);
     }
 
-    /// <summary>
-    /// 일어남 애니메이션 트리거.
-    /// Stumble 미끄러짐이 끝난 후 EnemyAI.StartGettingUp()에서 호출.
-    /// </summary>
-    public void TriggerGetUp()
-    {
+    public void TriggerGetUp() {
         if (animator == null || !animator.enabled) return;
         animator.SetTrigger(hashTriggerGetUp);
     }
 
-    /// <summary>
-    /// 점프 허그 공격 애니메이션 트리거.
-    /// </summary>
-    public void TriggerAttack()
-    {
+    public void TriggerAttack() {
         if (animator == null || !animator.enabled) return;
         animator.SetTrigger(hashTriggerAttack);
     }
 
-    /// <summary>
-    /// Animator를 완전히 비활성화 (레그돌 전환 시 호출).
-    /// </summary>
+    // ──────────────────────────────────────────────
+    //  [수정] CrossFade를 이용한 강제 전환 & IK 차단
+    // ──────────────────────────────────────────────
+    public void PlayHitAnimation(string boneName)
+    {
+        if (animator == null || !animator.enabled) return;
+
+        string[] targetStates = bodyHitStates; // 기본값: 몸통
+
+        if (!string.IsNullOrEmpty(boneName))
+        {
+            string nameLower = boneName.ToLower();
+
+            if (nameLower.Contains("head") || nameLower.Contains("neck"))
+            {
+                targetStates = headHitStates;
+                _ikBlockTimer = 0.5f; // [핵심] 대가리 맞으면 0.5초 동안 플레이어 안 쳐다봄 (고정 해제)
+            }
+            else if (nameLower.Contains("left") && (nameLower.Contains("arm") || nameLower.Contains("hand") || nameLower.Contains("shoulder")))
+            {
+                targetStates = leftArmHitStates;
+                _ikBlockTimer = 0.3f; // 팔 맞을 때도 살짝 풀어줌
+            }
+            else if (nameLower.Contains("right") && (nameLower.Contains("arm") || nameLower.Contains("hand") || nameLower.Contains("shoulder")))
+            {
+                targetStates = rightArmHitStates;
+                _ikBlockTimer = 0.3f;
+            }
+            else 
+            {
+                _ikBlockTimer = 0.3f; // 몸통
+            }
+        }
+
+        // 등록된 상태가 없으면 무시
+        if (targetStates == null || targetStates.Length == 0) return;
+
+        // 랜덤하게 하나 뽑아서 강제 전환 (Has Exit Time 이딴 거 다 무시하고 0.1초 만에 덮어버림)
+        string stateToPlay = targetStates[Random.Range(0, targetStates.Length)];
+        animator.CrossFadeInFixedTime(stateToPlay, 0.1f, hitLayerIndex);
+        
+        Debug.Log($"[Hit Animation] {boneName} 피격 -> {stateToPlay} (CrossFade 강제 실행)");
+    }
+
     public void DisableAnimator()
     {
         if (animator != null) animator.enabled = false;
     }
 
-    // ──────────────────────────────────────────────
-    //  IK: 플레이어를 향해 고개 돌림
-    //  [필수] Animator Controller의 Base Layer → 톱니바퀴 → IK Pass 체크
-    // ──────────────────────────────────────────────
     void OnAnimatorIK(int layerIndex)
     {
-        if (!useLookAtIK || animator == null || !animator.enabled) return;
-        if (_lookAtTarget == null) return;
+        if (!useLookAtIK || animator == null || !animator.enabled || _lookAtTarget == null) return;
 
-        // 넘어지거나 일어나는 중에는 LookAt 가중치를 줄임
-        // (완전히 끄면 부자연스러우므로 살짝 남겨둠)
         EnemyAI ai = GetComponent<EnemyAI>();
         float currentWeight = lookAtWeight;
-        if (ai != null && (ai.CurrentState == EnemyAI.EnemyState.Stumbling
-                        || ai.CurrentState == EnemyAI.EnemyState.Dead))
+        
+        // 사망, 넘어짐, 공중 넉다운, 일어나는 중, 또는 [피격 직후]에는 IK 강제 종료!
+        if (ai != null && (ai.CurrentState == EnemyAI.EnemyState.Stumbling || 
+                           ai.CurrentState == EnemyAI.EnemyState.KnockedDown || 
+                           ai.CurrentState == EnemyAI.EnemyState.GettingUp || 
+                           ai.CurrentState == EnemyAI.EnemyState.Dead) 
+            || _ikBlockTimer > 0f) 
         {
             currentWeight = 0f;
         }

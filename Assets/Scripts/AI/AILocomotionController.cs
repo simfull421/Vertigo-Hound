@@ -1,18 +1,17 @@
 using UnityEngine;
 using Pathfinding;
-using Pathfinding.RVO;
 
 public sealed class AILocomotionController
 {
     private const float DirectionEpsilon = 0.01f;
-    private readonly IAstarAI _ai;
-    private readonly RVOController _rvo;
+    
+    // IAstarAI와 RVOController를 통합하는 FollowerEntity
+    private readonly FollowerEntity _ai;
     private readonly Transform _transform;
 
-    public AILocomotionController(IAstarAI ai, RVOController rvo, Transform transform)
+    public AILocomotionController(FollowerEntity ai, Transform transform)
     {
         _ai = ai;
-        _rvo = rvo;
         _transform = transform;
     }
 
@@ -64,22 +63,36 @@ public sealed class AILocomotionController
     public void PauseMovement()
     {
         if (_ai == null) return;
-        // canSearch: 경로 탐색 중지, simulateMovement: 이동/회피 시뮬레이션 중지, isStopped: 경로 유지한 채 정지
-        _ai.canSearch = false;
-        _ai.simulateMovement = false;
-        _ai.isStopped = true;
+        
+        // [수정] 구조체이므로 변수에 담아서 수정 (CS1612 해결)
+        var repath = _ai.autoRepath;
+        repath.mode = AutoRepathPolicy.Mode.Never; 
+        _ai.autoRepath = repath;
 
-        if (_rvo != null) _rvo.locked = true;
+        _ai.isStopped = true;
+        _ai.simulateMovement = false; // canMove의 최신 이름
+
+        // RVO 설정
+        var rvoSettings = _ai.rvoSettings;
+        rvoSettings.locked = true;
+        _ai.rvoSettings = rvoSettings;
     }
 
     public void ResumeMovement()
     {
         if (_ai == null) return;
-        // 경로/이동/회피를 모두 재개하여 IAstarAI의 기본 이동으로 복귀
-        _ai.canSearch = true;
-        _ai.simulateMovement = true;
-        _ai.isStopped = false;
+        
+        // [수정] 구조체이므로 변수에 담아서 수정
+        var repath = _ai.autoRepath;
+        repath.mode = AutoRepathPolicy.Mode.Dynamic;
+        _ai.autoRepath = repath;
 
-        if (_rvo != null) _rvo.locked = false;
+        _ai.isStopped = false;
+        _ai.simulateMovement = true;
+
+        // RVO 설정 복구
+        var rvoSettings = _ai.rvoSettings;
+        rvoSettings.locked = false;
+        _ai.rvoSettings = rvoSettings;
     }
 }

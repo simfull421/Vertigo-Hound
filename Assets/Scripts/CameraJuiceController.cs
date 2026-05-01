@@ -99,6 +99,124 @@ public class CameraJuiceController : MonoBehaviour
     
     public void TriggerHighVaultJuice(float duration) => highVault.Trigger(this, duration);
 
+    // ── QTE Trolling Camera Logic ──
+    private Coroutine _qteRoutine;
+    private Vector3 _qtePosOffset;
+    private Quaternion _qteRotOffset = Quaternion.identity;
+    private bool _isQTEActive = false;
+
+    public void TriggerQTEPounded(Transform aiTarget)
+    {
+        if (_qteRoutine != null) StopCoroutine(_qteRoutine);
+        _qteRoutine = StartCoroutine(QTEPoundedRoutine(aiTarget));
+    }
+
+    public void EndQTEPounded(Transform aiTarget, bool playerWon)
+    {
+        if (_qteRoutine != null) StopCoroutine(_qteRoutine);
+        _qteRoutine = StartCoroutine(QTEEndRoutine(aiTarget, playerWon));
+    }
+
+    public void TriggerQTEHitShake(float rollAmount)
+    {
+        StartCoroutine(QTEHitShakeRoutine(rollAmount));
+    }
+
+    private System.Collections.IEnumerator QTEPoundedRoutine(Transform aiTarget)
+    {
+        _isQTEActive = true;
+        float t = 0f;
+        while (true) // EndQTEPounded가 호출될 때까지 유지
+        {
+            t += Time.unscaledDeltaTime * 5f;
+            // 바닥으로 -1.5Y 푹 꺼지는 오프셋
+            _qtePosOffset = Vector3.Lerp(_qtePosOffset, Vector3.down * 1.5f, Time.unscaledDeltaTime * 10f);
+            
+            // AI의 상체를 올려다보는 회전값 계산
+            if (aiTarget != null)
+            {
+                Vector3 aiChestPos = aiTarget.position + Vector3.up * 1.5f;
+                Vector3 dirToAI = (aiChestPos - mainCamera.transform.position).normalized;
+                
+                // 원래 카메라 회전을 기준으로, 타겟을 바라보기 위해 필요한 상대 회전(오프셋)을 구합니다.
+                // ActionRotation이나 원래 로컬 로테이션이 있으므로, 월드 회전에서 로컬 오프셋을 역산합니다.
+                Quaternion targetWorldRot = Quaternion.LookRotation(dirToAI);
+                Quaternion currentBaseWorldRot = positionPivot.rotation * _originalLocalRot; 
+                Quaternion neededLocalOffset = Quaternion.Inverse(currentBaseWorldRot) * targetWorldRot;
+
+                _qteRotOffset = Quaternion.Slerp(_qteRotOffset, neededLocalOffset, Time.unscaledDeltaTime * 5f);
+            }
+            yield return null;
+        }
+    }
+
+    private System.Collections.IEnumerator QTEHitShakeRoutine(float rollAmount)
+    {
+        Quaternion originalHitRot = _qteRotOffset;
+        Quaternion hitRot = originalHitRot * Quaternion.Euler(5f, 0f, rollAmount);
+        
+        float t = 0f;
+        while(t < 0.1f)
+        {
+            t += Time.unscaledDeltaTime;
+            _qteRotOffset = Quaternion.Slerp(originalHitRot, hitRot, t / 0.1f);
+            yield return null;
+        }
+        
+        t = 0f;
+        while(t < 0.15f)
+        {
+            t += Time.unscaledDeltaTime;
+            _qteRotOffset = Quaternion.Slerp(hitRot, originalHitRot, t / 0.15f);
+            yield return null;
+        }
+    }
+
+    private System.Collections.IEnumerator QTEEndRoutine(Transform aiTarget, bool playerWon)
+    {
+        if (!playerWon && aiTarget != null)
+        {
+            // 도망가는 AI를 1.5초간 누워서 쳐다봄
+            float lookTimer = 0f;
+            while (lookTimer < 1.5f)
+            {
+                lookTimer += Time.deltaTime;
+                Vector3 targetChestPos = aiTarget.position + Vector3.up * 1.5f;
+                Vector3 dir = (targetChestPos - mainCamera.transform.position).normalized;
+                
+                Quaternion targetWorldRot = Quaternion.LookRotation(dir);
+                Quaternion currentBaseWorldRot = positionPivot.rotation * _originalLocalRot; 
+                Quaternion neededLocalOffset = Quaternion.Inverse(currentBaseWorldRot) * targetWorldRot;
+
+                _qteRotOffset = Quaternion.Slerp(_qteRotOffset, neededLocalOffset, Time.deltaTime * 5f);
+                yield return null;
+            }
+        }
+
+        // 기상 연출 (원상복구)
+        float getUpTimer = 0f;
+        Vector3 startPos = _qtePosOffset;
+        Quaternion startRot = _qteRotOffset;
+
+        while (getUpTimer < 0.8f)
+        {
+            getUpTimer += Time.deltaTime;
+            float t = getUpTimer / 0.8f;
+            _qtePosOffset = Vector3.Lerp(startPos, Vector3.zero, t);
+            _qteRotOffset = Quaternion.Slerp(startRot, Quaternion.identity, t);
+            yield return null;
+        }
+
+        _qtePosOffset = Vector3.zero;
+        _qteRotOffset = Quaternion.identity;
+        _isQTEActive = false;
+        
+        if (player != null && player.movement != null)
+        {
+            player.enabled = true; // 컨트롤 복구
+        }
+    }
+
     public void OnFootstepTriggered(string side)
     {
         sprint.TriggerStep(side); 
@@ -140,10 +258,17 @@ public class CameraJuiceController : MonoBehaviour
             totalFovOffset += module.FovOffset;
         }
 
-        positionPivot.localPosition = _originalLocalPos + totalPosOffset;
+        positionPivot.localPosition = _originalLocalPos + totalPosOffset + (_isQTEActive ? _qtePosOffset : Vector3.zero);
 
         Quaternion actionRot = (actionController != null) ? actionController.ActionRotation : Quaternion.identity;
-        mainCamera.transform.localRotation = _originalLocalRot * actionRot * Quaternion.Euler(totalRotOffset);
+        Quaternion finalRot = _originalLocalRot * actionRot * Quaternion.Euler(totalRotOffset);
+        
+        if (_isQTEActive)
+        {
+            finalRot = finalRot * _qteRotOffset;
+        }
+        
+        mainCamera.transform.localRotation = finalRot;
 
         mainCamera.fieldOfView = maxFov + totalFovOffset;
     }
