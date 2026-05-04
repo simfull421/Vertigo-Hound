@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using Cinemachine;
 
 /// <summary>
 /// AI가 플레이어를 농락하는 시스템 (키 뺏기 QTE, 패스, 도발 춤추기)
@@ -26,6 +27,17 @@ public class AITrollingModule : MonoBehaviour
     public float passSearchRadius = 15f;
     [Tooltip("날아갈 키 프리팹 (가짜 시각 연출용)")]
     public GameObject dummyKeyPrefab;
+    [Tooltip("키를 뺏은 직후 패스를 지연할 시간 (초)")]
+    public float passDelayAfterSteal = 1.2f;
+
+    [Header("Cinemachine Closeup")]
+    [Tooltip("키를 뺏었을 때 얼굴 클로즈업용 카메라")]
+    public CinemachineVirtualCamera keyStealCloseupCamera;
+    [Tooltip("기본 플레이 카메라")]
+    public CinemachineVirtualCamera defaultCamera;
+    public float keyStealCloseupDuration = 1.2f;
+    public int closeupPriority = 20;
+    public int defaultPriority = 10;
 
     [Header("Debug")]
     [Tooltip("체크 시, 플레이어가 키를 가지고 있지 않아도 QTE(파운딩) 연출을 강제로 실행합니다.")]
@@ -42,16 +54,29 @@ public class AITrollingModule : MonoBehaviour
     private PlayerController _playerController;
     private Transform _playerCameraTransform;
     private float _originalCameraHeight;
+    private bool _stealKeyOnFail;
+    private float _passDelayTimer;
+    private Coroutine _closeupCoroutine;
+    private int _defaultCameraOriginalPriority;
+    private int _closeupCameraOriginalPriority;
 
     void Awake()
     {
         _enemyAI = GetComponent<EnemyAI>();
         _animCtrl = GetComponent<EnemyAnimatorController>();
         _faceCtrl = GetComponentInChildren<FaceTextureController>();
+
+        if (defaultCamera != null) _defaultCameraOriginalPriority = defaultCamera.Priority;
+        if (keyStealCloseupCamera != null) _closeupCameraOriginalPriority = keyStealCloseupCamera.Priority;
     }
 
     void Update()
     {
+        if (_passDelayTimer > 0f)
+        {
+            _passDelayTimer -= Time.deltaTime;
+        }
+
         // 1. QTE 로직 (Time.unscaledDeltaTime 사용)
         if (_isQTEActive)
         {
@@ -81,7 +106,7 @@ public class AITrollingModule : MonoBehaviour
         // 2. 패스 로직 (키를 들고 있고, 플레이어가 가까이 오면 패스)
         if (!_isQTEActive && DataKeyManager.Instance != null && DataKeyManager.Instance.currentKeyHolder == this.transform)
         {
-            if (_playerTransform != null && Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance)
+            if (_passDelayTimer <= 0f && _playerTransform != null && Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance)
             {
                 AttemptPass();
             }
@@ -129,10 +154,10 @@ public class AITrollingModule : MonoBehaviour
         if (_isQTEActive) return;
         
         bool hasKey = DataKeyManager.Instance != null && DataKeyManager.Instance.isKeyHeldByPlayer;
+        _stealKeyOnFail = hasKey || debugForcePlayerHasKey;
         if (!hasKey && !debugForcePlayerHasKey)
         {
-            Debug.Log($"[AITrolling] 플레이어가 키를 가지고 있지 않아 QTE가 취소되었습니다. (인스펙터의 Debug 옵션으로 강제 실행 가능)");
-            return;
+            Debug.Log($"[AITrolling] 플레이어가 키를 가지고 있지 않으므로 파운딩만 실행합니다.");
         }
 
         _playerTransform = playerTransform;
@@ -206,10 +231,49 @@ public class AITrollingModule : MonoBehaviour
         }
         else
         {
-            // 방어 실패: AI가 키를 뺏고 도망 (Fleeing)
-            DataKeyManager.Instance.SetKeyHolder(this.transform, false);
-            _enemyAI.SetState(EnemyAI.EnemyState.Fleeing);
+            if (_stealKeyOnFail && DataKeyManager.Instance != null)
+            {
+                // 방어 실패: AI가 키를 뺏고 도망 (Fleeing)
+                DataKeyManager.Instance.SetKeyHolder(this.transform, false);
+                _enemyAI.SetState(EnemyAI.EnemyState.Fleeing);
+                _passDelayTimer = passDelayAfterSteal;
+                TriggerKeyStealCloseup();
+            }
+            else
+            {
+                _enemyAI.SetState(EnemyAI.EnemyState.Chasing);
+            }
         }
+    }
+
+    private void TriggerKeyStealCloseup()
+    {
+        if (keyStealCloseupCamera == null) return;
+
+        if (_closeupCoroutine != null) StopCoroutine(_closeupCoroutine);
+
+        if (defaultCamera != null)
+        {
+            defaultCamera.Priority = defaultPriority;
+        }
+        keyStealCloseupCamera.Priority = closeupPriority;
+
+        _closeupCoroutine = StartCoroutine(ResetCloseupAfterDelay());
+    }
+
+    private IEnumerator ResetCloseupAfterDelay()
+    {
+        yield return new WaitForSeconds(keyStealCloseupDuration);
+
+        if (keyStealCloseupCamera != null)
+        {
+            keyStealCloseupCamera.Priority = _closeupCameraOriginalPriority;
+        }
+        if (defaultCamera != null)
+        {
+            defaultCamera.Priority = _defaultCameraOriginalPriority;
+        }
+        _closeupCoroutine = null;
     }
 
     private void AttemptPass()

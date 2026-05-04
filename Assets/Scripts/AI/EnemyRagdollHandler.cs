@@ -57,6 +57,11 @@ public class EnemyRagdollHandler : MonoBehaviour
     {
         if (_returnCoroutine != null) StopCoroutine(_returnCoroutine);
 
+        if (DataKeyManager.Instance != null && DataKeyManager.Instance.currentKeyHolder == transform)
+        {
+            DataKeyManager.Instance.DropKeyAt(transform.position + Vector3.up * 0.5f);
+        }
+
         if (_enemyAI != null) _enemyAI.Disable();
         
         if (_mainRb != null) { _mainRb.isKinematic = true; _mainRb.detectCollisions = false; }
