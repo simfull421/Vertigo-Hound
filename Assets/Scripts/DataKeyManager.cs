@@ -16,6 +16,10 @@ public class DataKeyManager : MonoBehaviour
     [Tooltip("플레이어가 키를 들고 있는지 여부")]
     public bool isKeyHeldByPlayer;
 
+    [Header("Key Prefab")]
+    [Tooltip("월드에 떨어뜨릴 키 프리팹")]
+    public GameObject keyDropPrefab;
+
     /// <summary>
     /// 키의 소유자가 변경되었을 때 발생하는 이벤트 (매개변수: 새로운 소유자의 Transform)
     /// </summary>
@@ -58,5 +62,20 @@ public class DataKeyManager : MonoBehaviour
         }
 
         OnKeyHolderChanged?.Invoke(newHolder);
+    }
+
+    public void DropKeyAt(Vector3 position)
+    {
+        SetKeyHolder(null, false);
+        UpdateKeyPosition(position);
+
+        if (keyDropPrefab != null)
+        {
+            Instantiate(keyDropPrefab, position, Quaternion.identity);
+        }
+        else
+        {
+            Debug.LogWarning("[DataKeyManager] keyDropPrefab이 설정되지 않아 키 오브젝트를 생성하지 못했습니다.");
+        }
     }
 }
