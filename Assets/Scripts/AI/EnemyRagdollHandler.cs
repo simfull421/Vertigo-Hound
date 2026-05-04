@@ -77,6 +77,9 @@ public class EnemyRagdollHandler : MonoBehaviour
                 if (rb == null || rb == _mainRb) continue;
                 rb.isKinematic = false;
                 rb.useGravity = true;
+                rb.linearDamping = 0.5f;           // 공기 저항으로 날아가는 느낌 줄임
+                rb.angularDamping = 1f;      // 회전 억제
+                rb.AddForce(Vector3.down * 5f, ForceMode.VelocityChange); // 하향 즉시 가속 (무게감)
             }
         }
 

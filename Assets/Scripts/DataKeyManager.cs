@@ -19,8 +19,8 @@ public class DataKeyManager : MonoBehaviour
     [Tooltip("플레이어가 키를 들고 있는지 여부")]
     public bool isKeyHeldByPlayer;
 
-    [Header("Key Prefab")]
-    [Tooltip("월드에 떨어뜨릴 키 프리팹")]
+    [Header("Key Prefab (Obsolete - 사용하지 않음)")]
+    [Tooltip("사용하지 않음. actualKeyObject를 재배치하는 방식으로 대체됨")]
     public GameObject keyDropPrefab;
 
     /// <summary>
@@ -87,6 +87,15 @@ public class DataKeyManager : MonoBehaviour
                         actualKeyObject.transform.localPosition = Vector3.up * 1f; // 오른손이 없으면 가슴 높이로
                     }
                 }
+                actualKeyObject.SetActive(true);
+            }
+        }
+        else
+        {
+            // 소유자가 없을 때: 키 오브젝트를 부모에서 분리
+            if (actualKeyObject != null)
+            {
+                actualKeyObject.transform.SetParent(null);
             }
         }
 
@@ -98,13 +107,15 @@ public class DataKeyManager : MonoBehaviour
         SetKeyHolder(null, false);
         UpdateKeyPosition(position);
 
-        if (keyDropPrefab != null)
+        if (actualKeyObject != null)
         {
-            Instantiate(keyDropPrefab, position, Quaternion.identity);
+            actualKeyObject.transform.SetParent(null);
+            actualKeyObject.transform.position = position;
+            actualKeyObject.SetActive(true);
         }
         else
         {
-            Debug.LogWarning("[DataKeyManager] keyDropPrefab이 설정되지 않아 키 오브젝트를 생성하지 못했습니다.");
+            Debug.LogWarning("[DataKeyManager] actualKeyObject가 null입니다. 인스펙터에서 할당해주세요.");
         }
     }
 }

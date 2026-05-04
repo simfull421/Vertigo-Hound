@@ -289,6 +289,8 @@ public sealed class PlayerAnimatorHandler
         
         if (currentWeaponType == 0) // 맨손(Run Upper) 장착
         {
+            // 총→맨손: Sway 잔존값 초기화
+            if (_hub.gunController != null) _hub.gunController.ResetSway();
             if (_hub.viewmodelGun != null) _hub.viewmodelGun.SetActive(false);
             if (_hub.runUpper != null) _hub.runUpper.SetActive(true);
         }
@@ -298,7 +300,11 @@ public sealed class PlayerAnimatorHandler
             if (_hub.viewmodelGun != null)
             {
                 _hub.viewmodelGun.SetActive(true);
-                if (_hub.gunController != null) _hub.gunController.Initialize(_hub);
+                if (_hub.gunController != null)
+                {
+                    _hub.gunController.Initialize(_hub);
+                    _hub.gunController.ResetSway(); // 맨손→총: 깨끗한 초기 상태 보장
+                }
             }
         }
     }

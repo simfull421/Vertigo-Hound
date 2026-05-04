@@ -30,10 +30,11 @@ public sealed class PlayerMovement
     public float maxPitchDown = 70f;
     private float xRotation = 0f;
 
-    [Header("Camera Recoil")]
-    [Tooltip("사격 시 카메라가 위로 들리는 속도 (부드러운 반동 적용)")]
-    public float recoilApplySpeed = 30f;
-    private float targetRecoilOffset = 0f;
+    [Header("Camera Recoil (Recovery)")]
+    [Tooltip("사격 후 시점이 원래로 돌아오는 속도 (높을수록 빠르게 복구)")]
+    public float recoilRecoverySpeed = 8f;
+    private float _preRecoilX;         // 반동 적용 직전의 xRotation 스냅샷
+    private float _recoilAccumulated;  // 현재 남아있는 반동 누적량
 
     [Header("Hover Suspension")]
     [Tooltip("캡슐 중심에서 바닥까지 띄울 목표 높이. 캡슐의 extents.y(보통 1)보다 커야 바닥에 닿지 않습니다.")]
@@ -182,14 +183,11 @@ public sealed class PlayerMovement
 
         xRotation -= mouseY;
 
-        // 반동 누적값을 xRotation에 부드럽게 실제 적용 (영구적용되므로 직접 마우스로 내려서 잡아야 함)
-        if (targetRecoilOffset > 0f)
+        // [윙맨 반동 회복] 반동 후 자동으로 원래 시점으로 부드럽게 복구
+        if (_recoilAccumulated > 0.01f)
         {
-            float applyStep = targetRecoilOffset * recoilApplySpeed * Time.deltaTime;
-            applyStep = Mathf.Min(applyStep, targetRecoilOffset); // 오버슛 방지
-            
-            xRotation -= applyStep;
-            targetRecoilOffset -= applyStep;
+            xRotation = Mathf.Lerp(xRotation, _preRecoilX, recoilRecoverySpeed * Time.deltaTime);
+            _recoilAccumulated = Mathf.Lerp(_recoilAccumulated, 0f, recoilRecoverySpeed * Time.deltaTime);
         }
 
         xRotation = Mathf.Clamp(xRotation, maxPitchUp, maxPitchDown);
@@ -204,7 +202,19 @@ public sealed class PlayerMovement
 
     public void AddRecoilPitch(float pitchUp)
     {
-        targetRecoilOffset += Mathf.Abs(pitchUp);
+        // 반동 전 시점 스냅샷 (이미 반동 중이면 갱신하지 않고 원래 목표 유지)
+        if (_recoilAccumulated <= 0.01f)
+        {
+            _preRecoilX = xRotation;
+        }
+        
+        float kick = Mathf.Abs(pitchUp);
+        xRotation -= kick; // 즉시 위로 킥
+        _recoilAccumulated += kick;
+        
+        // 좌우 약간의 랜덤 반동 (Yaw)
+        float yawRecoil = UnityEngine.Random.Range(-1f, 1f);
+        _hub.transform.Rotate(Vector3.up * yawRecoil);
     }
 
     private void MovePlayer()
