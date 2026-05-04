@@ -73,5 +73,9 @@ public class DataKeyManager : MonoBehaviour
         {
             Instantiate(keyDropPrefab, position, Quaternion.identity);
         }
+        else
+        {
+            Debug.LogWarning("[DataKeyManager] keyDropPrefab이 설정되지 않아 키 오브젝트를 생성하지 못했습니다.");
+        }
     }
 }

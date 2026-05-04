@@ -154,12 +154,12 @@ public class AITrollingModule : MonoBehaviour
         if (_isQTEActive) return;
         
         bool hasKey = DataKeyManager.Instance != null && DataKeyManager.Instance.isKeyHeldByPlayer;
-        bool canStealKey = hasKey || debugForcePlayerHasKey;
-        if (!canStealKey)
+        bool shouldStealKey = hasKey || debugForcePlayerHasKey;
+        if (!shouldStealKey)
         {
             Debug.Log($"[AITrolling] 플레이어가 키를 가지고 있지 않아 파운딩만 실행됩니다.");
         }
-        _stealKeyOnFail = canStealKey;
+        _stealKeyOnFail = shouldStealKey;
 
         _playerTransform = playerTransform;
         _playerController = playerTransform.GetComponent<PlayerController>();
@@ -255,7 +255,7 @@ public class AITrollingModule : MonoBehaviour
 
         if (defaultCamera != null)
         {
-            defaultCamera.Priority = defaultPriority;
+            defaultCamera.Priority = Mathf.Min(defaultPriority, _defaultCameraOriginalPriority);
         }
         keyStealCloseupCamera.Priority = closeupPriority;
 
