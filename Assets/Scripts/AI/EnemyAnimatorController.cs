@@ -54,7 +54,12 @@ public class EnemyAnimatorController : MonoBehaviour
     public void ForceLookAtTarget(Transform target, float duration)
     {
         _overrideLookAtTarget = target;
-        _overrideLookAtTimer = Mathf.Max(0f, duration);
+        _overrideLookAtTimer = duration;
+        if (_overrideLookAtTimer <= 0f)
+        {
+            _overrideLookAtTimer = 0f;
+            _overrideLookAtTarget = null;
+        }
     }
 
     public void Activate(int aiType)

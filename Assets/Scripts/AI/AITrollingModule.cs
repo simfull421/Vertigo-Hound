@@ -95,7 +95,8 @@ public class AITrollingModule : MonoBehaviour
             {
                 _randomPassTimer -= Time.deltaTime;
                 bool randomPassReady = _randomPassTimer <= 0f;
-                bool shouldPass = Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance
+                float passTriggerSqr = passTriggerDistance * passTriggerDistance;
+                bool shouldPass = (transform.position - _playerTransform.position).sqrMagnitude < passTriggerSqr
                                   || randomPassReady;
 
                 if (shouldPass)
