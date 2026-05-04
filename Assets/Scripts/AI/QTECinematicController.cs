@@ -72,8 +72,23 @@ public class QTECinematicController : MonoBehaviour
         if (juiceController != null) juiceController.DisablePlayerCamera();
         if (qteVirtualCamera != null) qteVirtualCamera.Priority = 20;
 
-        // 4. 타임라인 재생
+    // 4. 타임라인 재생
         timelineDirector.Play();
+    }
+
+    /// <summary>
+    /// 타임라인 시그널(Signal)에서 호출할 함수: 키 탈취 및 도주 로직 실행
+    /// </summary>
+    public void OnSignalExecuteKeySteal()
+    {
+        if (dynamicRealAI != null)
+        {
+            var trollingModule = dynamicRealAI.GetComponent<AITrollingModule>();
+            if (trollingModule != null)
+            {
+                trollingModule.ExecuteKeyStealAndFlee();
+            }
+        }
     }
 
     /// <summary>

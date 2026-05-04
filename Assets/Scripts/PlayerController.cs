@@ -41,6 +41,7 @@ public class PlayerController : MonoBehaviour
     public PlayerInteractionModule interactModule = new PlayerInteractionModule();
    
     private bool _jumpIntended;
+    private bool _jumpFromSlide;
 
     void Awake()
     {
@@ -129,6 +130,18 @@ public class PlayerController : MonoBehaviour
 
         movement.UpdateModule();
         wallKick.UpdateModule();
+
+        if (InputProv.JumpTriggered)
+        {
+            _jumpIntended = true;
+            _jumpFromSlide = slider.IsSliding;
+
+            if (movement.IsGrounded)
+            {
+                animatorHandler.TriggerJump();
+            }
+        }
+
         slider.UpdateModule();
         vault.UpdateModule(); // Smart Reticle용 상시 감지 루프 작동
         ramp.UpdateModule();
@@ -137,16 +150,6 @@ public class PlayerController : MonoBehaviour
         vaultIK.UpdateModule();
         gunController.UpdateModule();
         interactModule.UpdateModule();
-            
-        if (InputProv.JumpTriggered)
-        {
-            _jumpIntended = true;
-
-            if (movement.IsGrounded)
-            {
-                animatorHandler.TriggerJump();
-            }
-        }
     }
 
     // [추가] 애니메이터 연산이 끝난 후 본 스케일 0을 덮어씌우는 타이밍
@@ -158,13 +161,18 @@ public class PlayerController : MonoBehaviour
 
     void FixedUpdate()
     {
+        bool shouldPreserveSlideMomentum = slider.IsSliding || _jumpFromSlide;
+        
         if (vault.IsVaulting)
         {
             // Vault는 내부 FixedUpdate 코루틴에서 전적으로 이동을 통제하므로 다른 모듈 로직을 배제합니다.
         }
-        else if (slider.IsSliding)
+        else if (shouldPreserveSlideMomentum)
         {
-            slider.FixedUpdateModule();
+            if (slider.IsSliding)
+            {
+                slider.FixedUpdateModule();
+            }
         }
         else
         {
@@ -191,7 +199,7 @@ public class PlayerController : MonoBehaviour
                 {
                     wallKick.HandleJump();
                 }
-                else if (slider.IsSliding)
+                else if (shouldPreserveSlideMomentum)
                 {
                     slider.HandleJump();
                 }
@@ -201,6 +209,7 @@ public class PlayerController : MonoBehaviour
                 }
             }
             _jumpIntended = false;
+            _jumpFromSlide = false;
         }
     }
 }

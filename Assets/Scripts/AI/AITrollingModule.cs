@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections;
-using DG.Tweening; // DOTween 추가
+using DG.Tweening; // Local 의도: DOTween 사용
+using Cinemachine; // Remote 의도: 카메라 제어 사용
 
 /// <summary>
 /// AI가 플레이어를 농락하는 시스템 (키 뺏기 QTE, 패스, 도발 춤추기)
@@ -8,7 +9,7 @@ using DG.Tweening; // DOTween 추가
 [RequireComponent(typeof(EnemyAI))]
 public class AITrollingModule : MonoBehaviour
 {
-    // QTE UI 및 설정 제거됨
+    // QTE UI 및 설정 제거됨 (타임라인으로 대체)
     
     [Header("Key Visuals")]
     public Transform rightHandBone;
@@ -17,6 +18,16 @@ public class AITrollingModule : MonoBehaviour
     public float passTriggerDistance = 5f;
     public float passSearchRadius = 15f;
     public GameObject dummyKeyPrefab;
+    [Tooltip("키를 뺏은 직후 패스를 지연할 시간 (초)")]
+    public float passDelayAfterSteal = 1.2f;
+
+    [Header("Cinemachine Closeup")]
+    [Tooltip("키를 뺏었을 때 얼굴 클로즈업용 카메라")]
+    public CinemachineVirtualCamera keyStealCloseupCamera;
+    [Tooltip("기본 플레이 카메라")]
+    public CinemachineVirtualCamera defaultCamera;
+    public float keyStealCloseupDuration = 1.2f;
+    public int closeupPriority = 20;
 
     [Header("Debug")]
     public bool debugForcePlayerHasKey = false;
@@ -27,26 +38,42 @@ public class AITrollingModule : MonoBehaviour
 
     private bool _isCinematicTriggered = false;
     private Transform _playerTransform;
+    
+    // Copilot이 추가한 유효한 변수들 (카메라 및 타이머 제어용)
+    private float _passDelayTimer;
+    private Coroutine _closeupCoroutine;
+    private int _defaultCameraOriginalPriority;
+    private int _closeupCameraOriginalPriority;
 
     void Awake()
     {
         _enemyAI = GetComponent<EnemyAI>();
         _animCtrl = GetComponent<EnemyAnimatorController>();
         _faceCtrl = GetComponentInChildren<FaceTextureController>();
+
+        if (defaultCamera != null) _defaultCameraOriginalPriority = defaultCamera.Priority;
+        if (keyStealCloseupCamera != null) _closeupCameraOriginalPriority = keyStealCloseupCamera.Priority;
     }
 
     void Update()
     {
+        // 1. 패스 유예 타이머 감소
+        if (_passDelayTimer > 0f)
+        {
+            _passDelayTimer -= Time.deltaTime;
+        }
+
+        // 2. 키 소지 및 패스 로직 (타임라인 실행 중이 아닐 때만)
         if (!_isCinematicTriggered && DataKeyManager.Instance != null && DataKeyManager.Instance.currentKeyHolder == this.transform)
         {
-            // [버그 수정] 패스받은 AI는 _playerTransform이 null이므로 강제 캐싱
             if (_playerTransform == null)
             {
                 PlayerController pc = FindFirstObjectByType<PlayerController>();
                 if (pc != null) _playerTransform = pc.transform;
             }
 
-            if (_playerTransform != null && Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance)
+            // 쿨타임이 끝났고 플레이어가 다가오면 패스
+            if (_passDelayTimer <= 0f && _playerTransform != null && Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance)
             {
                 AttemptPass();
             }
@@ -75,10 +102,11 @@ public class AITrollingModule : MonoBehaviour
         TriggerCinematic(pc);
     }
 
+    // Local HEAD의 깔끔한 타임라인 진입 로직 유지
     private void TriggerCinematic(PlayerController pc)
     {
         _isCinematicTriggered = true;
-        _playerTransform = pc.transform; // 캐싱 보장
+        _playerTransform = pc.transform;
 
         // [Juice] 역경직 (Hit Stop) 연출
         Time.timeScale = 0.1f;
@@ -91,12 +119,64 @@ public class AITrollingModule : MonoBehaviour
         }
     }
 
-    // 타임라인 연출이 끝난 후 다시 잡을 수 있도록 초기화
     public void ResetTrigger()
     {
         _isCinematicTriggered = false;
     }
 
+    /// <summary>
+    /// [추가] 타임라인(Cinematic) 종료 후, AI가 플레이어의 키를 뺏고 도망갈 때 호출할 퍼블릭 메서드
+    /// 타임라인의 Signal이나 이벤트에서 이 함수를 호출해야 함.
+    /// </summary>
+    public void ExecuteKeyStealAndFlee()
+    {
+        if (DataKeyManager.Instance != null)
+        {
+            DataKeyManager.Instance.SetKeyHolder(this.transform, false);
+        }
+        
+        _enemyAI.SetState(EnemyAI.EnemyState.Fleeing);
+        _passDelayTimer = passDelayAfterSteal; // 뺏은 직후 바로 패스하지 못하도록 유예 기간 설정
+        TriggerKeyStealCloseup(); // 카메라 클로즈업 연출 시작
+    }
+
+    // Remote에서 가져온 유효한 시네머신 클로즈업 로직
+    private void TriggerKeyStealCloseup()
+    {
+        if (keyStealCloseupCamera == null) return;
+
+        if (_closeupCoroutine != null) StopCoroutine(_closeupCoroutine);
+
+        if (defaultCamera != null)
+        {
+            int loweredPriority = _defaultCameraOriginalPriority;
+            if (loweredPriority >= closeupPriority)
+            {
+                loweredPriority = closeupPriority - 1;
+            }
+            defaultCamera.Priority = loweredPriority;
+        }
+        keyStealCloseupCamera.Priority = closeupPriority;
+
+        _closeupCoroutine = StartCoroutine(ResetCloseupAfterDelay());
+    }
+
+    private IEnumerator ResetCloseupAfterDelay()
+    {
+        yield return new WaitForSeconds(keyStealCloseupDuration);
+
+        if (keyStealCloseupCamera != null)
+        {
+            keyStealCloseupCamera.Priority = _closeupCameraOriginalPriority;
+        }
+        if (defaultCamera != null)
+        {
+            defaultCamera.Priority = _defaultCameraOriginalPriority;
+        }
+        _closeupCoroutine = null;
+    }
+
+    // Local HEAD의 DOTween 기반 패스 로직 유지
     private void AttemptPass()
     {
         Collider[] hits = Physics.OverlapSphere(transform.position, passSearchRadius);
@@ -152,7 +232,6 @@ public class AITrollingModule : MonoBehaviour
             EnemyAnimatorController targetAnim = targetAI.GetComponent<EnemyAnimatorController>();
             if (targetAnim != null && targetAnim.animator != null)
             {
-                // 받는 애 상체 마스크용 트리거
                 targetAnim.animator.SetTrigger("TriggerCatch");
             }
 
