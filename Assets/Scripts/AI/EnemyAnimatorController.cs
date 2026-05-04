@@ -10,6 +10,8 @@ public class EnemyAnimatorController : MonoBehaviour
     public float lookAtWeight = 1.0f;
     public float bodyWeight = 0.2f;
     public float headWeight = 0.8f;
+    [Tooltip("플레이어와 이 거리 이하일 때만 IK 활성화")]
+    public float lookAtMaxDistance = 10f;
 
     // Animator 해시값
     private readonly int hashSpeed = Animator.StringToHash("Speed");
@@ -37,6 +39,8 @@ public class EnemyAnimatorController : MonoBehaviour
     private float _currentMultiplier = 1f;
     private float _multiplierVelocity;
     private Transform _lookAtTarget;
+    private Transform _overrideLookAtTarget;
+    private float _overrideLookAtTimer;
     public float smoothTime = 0.1f;
 
     // [추가] 피격 시 IK를 잠시 풀어서 모가지가 고정되는 걸 막는 타이머
@@ -45,6 +49,12 @@ public class EnemyAnimatorController : MonoBehaviour
     public void SetLookAtTarget(Transform target)
     {
         _lookAtTarget = target;
+    }
+
+    public void ForceLookAtTarget(Transform target, float duration)
+    {
+        _overrideLookAtTarget = target;
+        _overrideLookAtTimer = Mathf.Max(0f, duration);
     }
 
     public void Activate(int aiType)
@@ -71,6 +81,15 @@ public class EnemyAnimatorController : MonoBehaviour
         if (_ikBlockTimer > 0f)
         {
             _ikBlockTimer -= Time.deltaTime;
+        }
+        if (_overrideLookAtTimer > 0f)
+        {
+            _overrideLookAtTimer -= Time.deltaTime;
+            if (_overrideLookAtTimer <= 0f)
+            {
+                _overrideLookAtTimer = 0f;
+                _overrideLookAtTarget = null;
+            }
         }
     }
 
@@ -159,7 +178,18 @@ public class EnemyAnimatorController : MonoBehaviour
 
     void OnAnimatorIK(int layerIndex)
     {
-        if (!useLookAtIK || animator == null || !animator.enabled || _lookAtTarget == null) return;
+        Transform lookAtTarget = GetCurrentLookAtTarget();
+        if (!useLookAtIK || animator == null || !animator.enabled || lookAtTarget == null) return;
+
+        if (_lookAtTarget == null) return;
+
+        float maxDistanceSqr = lookAtMaxDistance * lookAtMaxDistance;
+        float distanceSqr = (transform.position - _lookAtTarget.position).sqrMagnitude;
+        if (distanceSqr > maxDistanceSqr)
+        {
+            animator.SetLookAtWeight(0f, bodyWeight, headWeight);
+            return;
+        }
 
         EnemyAI ai = GetComponent<EnemyAI>();
         float currentWeight = lookAtWeight;
@@ -175,6 +205,16 @@ public class EnemyAnimatorController : MonoBehaviour
         }
 
         animator.SetLookAtWeight(currentWeight, bodyWeight, headWeight);
-        animator.SetLookAtPosition(_lookAtTarget.position + Vector3.up * 1.5f);
+        animator.SetLookAtPosition(lookAtTarget.position + Vector3.up * 1.5f);
+    }
+
+    private Transform GetCurrentLookAtTarget()
+    {
+        if (_overrideLookAtTimer > 0f && _overrideLookAtTarget != null)
+        {
+            return _overrideLookAtTarget;
+        }
+
+        return _lookAtTarget;
     }
 }

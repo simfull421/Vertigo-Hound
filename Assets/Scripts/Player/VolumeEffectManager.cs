@@ -9,7 +9,7 @@ public class VolumeEffectManager : MonoBehaviour
     public Volume globalVolume; // 씬에 있는 Global Volume 할당
 
     [Header("Hit Effect Settings")]
-    public float hitVignetteIntensity = 0.5f;
+    public float hitVignetteIntensity = 0.9f;
     public float hitVignetteDuration = 0.3f;
     
     public float hitBlurDistance = 0.1f; // 작을수록 화면이 흐려짐
@@ -38,7 +38,9 @@ public class VolumeEffectManager : MonoBehaviour
         if (_vignette != null)
         {
             DOTween.Kill(_vignette); // 중복 실행 방지
-            _vignette.intensity.value = hitVignetteIntensity;
+            _vignette.color.value = Color.black;
+            float targetIntensity = Mathf.Clamp(hitVignetteIntensity, 0.8f, 1f);
+            _vignette.intensity.value = targetIntensity;
             DOTween.To(() => _vignette.intensity.value, x => _vignette.intensity.value = x, 0f, hitVignetteDuration)
                    .SetEase(Ease.OutQuad);
         }

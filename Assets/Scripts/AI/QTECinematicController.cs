@@ -11,6 +11,7 @@ public class QTECinematicController : MonoBehaviour
     [Header("Real Objects (FSM, Physics 활성화됨)")]
     public GameObject realPlayer;
     public GameObject playerVisuals; // <--- 새로 추가 (여기에 noArms 할당)
+    public GameObject defaultArmsVisual;
     // 인스펙터에서 할당할 필요 없게 숨김
     [HideInInspector] public GameObject dynamicRealAI; 
 
@@ -110,7 +111,7 @@ public class QTECinematicController : MonoBehaviour
             dynamicRealAI.SetActive(true);
         }
 
-        if (playerVisuals != null) playerVisuals.SetActive(true); // <--- 모델링 복구
+        if (defaultArmsVisual != null) defaultArmsVisual.SetActive(true);
 
         // 파운딩 카메라 끄기
         if (qteVirtualCamera != null) qteVirtualCamera.Priority = 0;

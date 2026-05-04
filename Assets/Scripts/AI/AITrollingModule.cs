@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 using DG.Tweening; // Local 의도: DOTween 사용
 using Cinemachine; // Remote 의도: 카메라 제어 사용
 
@@ -17,9 +18,20 @@ public class AITrollingModule : MonoBehaviour
     [Header("Pass Settings")]
     public float passTriggerDistance = 5f;
     public float passSearchRadius = 15f;
-    public GameObject dummyKeyPrefab;
     [Tooltip("키를 뺏은 직후 패스를 지연할 시간 (초)")]
     public float passDelayAfterSteal = 1.2f;
+    [Tooltip("랜덤 패스 최소 간격 (초)")]
+    public float randomPassMinInterval = 2.5f;
+    [Tooltip("랜덤 패스 최대 간격 (초)")]
+    public float randomPassMaxInterval = 5f;
+    [Tooltip("패스 시 IK LookAt을 오버라이드할 시간 (초)")]
+    public float passLookAtOverrideDuration = 1f;
+
+    [Header("Pass VFX")]
+    public LineRenderer passLinePrefab;
+    public int passLinePoolSize = 3;
+    public float passLineDurationMin = 0.1f;
+    public float passLineDurationMax = 0.2f;
 
     [Header("Cinemachine Closeup")]
     [Tooltip("키를 뺏었을 때 얼굴 클로즈업용 카메라")]
@@ -44,6 +56,8 @@ public class AITrollingModule : MonoBehaviour
     private Coroutine _closeupCoroutine;
     private int _defaultCameraOriginalPriority;
     private int _closeupCameraOriginalPriority;
+    private float _randomPassTimer;
+    private readonly Queue<LineRenderer> _passLinePool = new Queue<LineRenderer>();
 
     void Awake()
     {
@@ -53,6 +67,8 @@ public class AITrollingModule : MonoBehaviour
 
         if (defaultCamera != null) _defaultCameraOriginalPriority = defaultCamera.Priority;
         if (keyStealCloseupCamera != null) _closeupCameraOriginalPriority = keyStealCloseupCamera.Priority;
+        InitializePassLinePool();
+        ResetRandomPassTimer();
     }
 
     void Update()
@@ -72,10 +88,23 @@ public class AITrollingModule : MonoBehaviour
                 if (pc != null) _playerTransform = pc.transform;
             }
 
-            // 쿨타임이 끝났고 플레이어가 다가오면 패스
-            if (_passDelayTimer <= 0f && _playerTransform != null && Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance)
+            if (_passDelayTimer <= 0f)
             {
-                AttemptPass();
+                _randomPassTimer -= Time.deltaTime;
+
+                bool shouldPass = _playerTransform != null &&
+                                  Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance;
+
+                if (!shouldPass && _randomPassTimer <= 0f)
+                {
+                    shouldPass = true;
+                }
+
+                if (shouldPass)
+                {
+                    AttemptPass();
+                    ResetRandomPassTimer();
+                }
             }
         }
     }
@@ -130,9 +159,14 @@ public class AITrollingModule : MonoBehaviour
     /// </summary>
     public void ExecuteKeyStealAndFlee()
     {
-        if (DataKeyManager.Instance != null)
+        if (DataKeyManager.Instance != null && DataKeyManager.Instance.isKeyHeldByPlayer)
         {
             DataKeyManager.Instance.SetKeyHolder(this.transform, false);
+        }
+        else
+        {
+            _enemyAI.SetState(EnemyAI.EnemyState.Fleeing);
+            return;
         }
         
         _enemyAI.SetState(EnemyAI.EnemyState.Fleeing);
@@ -200,16 +234,8 @@ public class AITrollingModule : MonoBehaviour
         if (bestTarget != null)
         {
             if (_animCtrl != null && _animCtrl.animator != null) _animCtrl.animator.SetTrigger("TriggerThrow");
-
-            if (dummyKeyPrefab != null)
-            {
-                PassKeyToTarget(bestTarget.transform, dummyKeyPrefab);
-            }
-            else
-            {
-                DataKeyManager.Instance.SetKeyHolder(bestTarget.transform, false);
-                bestTarget.SetState(EnemyAI.EnemyState.Fleeing);
-            }
+            _animCtrl?.ForceLookAtTarget(bestTarget.transform, passLookAtOverrideDuration);
+            PassKeyToTarget(bestTarget.transform);
 
             // 던지는 즉시 도망 상태 유지 (Taunting으로 인한 정지 방지)
             _enemyAI.SetState(EnemyAI.EnemyState.Fleeing);
@@ -221,7 +247,7 @@ public class AITrollingModule : MonoBehaviour
         }
     }
 
-    private void PassKeyToTarget(Transform targetAI, GameObject dummyKeyPrefab)
+    private void PassKeyToTarget(Transform targetAI)
     {
         // 1. 던지는 애 달리는 상태(Fleeing) 유지
         _enemyAI.SetState(EnemyAI.EnemyState.Fleeing);
@@ -234,30 +260,97 @@ public class AITrollingModule : MonoBehaviour
             {
                 targetAnim.animator.SetTrigger("TriggerCatch");
             }
+            targetAnim?.ForceLookAtTarget(transform, passLookAtOverrideDuration);
 
             EnemyAI targetEnemyAI = targetAI.GetComponent<EnemyAI>();
             if (targetEnemyAI != null) targetEnemyAI.SetState(EnemyAI.EnemyState.Fleeing);
         }
 
-        // 3. DOTween으로 키 날려주기
-        GameObject flyingKey = Instantiate(dummyKeyPrefab, transform.position + Vector3.up * 1.5f, Quaternion.identity);
-        Vector3 targetPos = targetAI.position + Vector3.up * 1.5f;
+        // 3. 라인 렌더러로 빠르게 패스 연출
+        if (targetAI != null)
+        {
+            LineRenderer passLine = GetPassLineRenderer();
+            Vector3 startPos = transform.position + Vector3.up * 1.5f;
+            Vector3 endPos = targetAI.position + Vector3.up * 1.5f;
+            float duration = Random.Range(passLineDurationMin, passLineDurationMax);
 
-        flyingKey.transform.DOJump(targetPos, jumpPower: 3f, numJumps: 1, duration: 0.5f)
-            .SetEase(Ease.Linear)
-            .SetUpdate(true)
-            .OnComplete(() =>
+            if (passLine != null)
             {
-                // 도착 후 처리
-                if (flyingKey != null) Destroy(flyingKey);
+                StartCoroutine(AnimatePassLine(passLine, startPos, endPos, duration, targetAI));
+            }
+            else if (DataKeyManager.Instance != null)
+            {
+                DataKeyManager.Instance.SetKeyHolder(targetAI, false);
+            }
+        }
+    }
 
-                if (targetAI != null)
-                {
-                    if (DataKeyManager.Instance != null)
-                    {
-                        DataKeyManager.Instance.SetKeyHolder(targetAI, false);
-                    }
-                }
-            });
+    private void InitializePassLinePool()
+    {
+        if (passLinePrefab == null || passLinePoolSize <= 0) return;
+
+        for (int i = 0; i < passLinePoolSize; i++)
+        {
+            LineRenderer line = Instantiate(passLinePrefab, transform);
+            line.gameObject.SetActive(false);
+            _passLinePool.Enqueue(line);
+        }
+    }
+
+    private LineRenderer GetPassLineRenderer()
+    {
+        if (_passLinePool.Count == 0) return null;
+        LineRenderer line = _passLinePool.Dequeue();
+        line.gameObject.SetActive(true);
+        return line;
+    }
+
+    private void ReleasePassLineRenderer(LineRenderer line)
+    {
+        if (line == null) return;
+        line.gameObject.SetActive(false);
+        _passLinePool.Enqueue(line);
+    }
+
+    private IEnumerator AnimatePassLine(LineRenderer line, Vector3 startPos, Vector3 endPos, float duration, Transform targetAI)
+    {
+        if (line == null)
+        {
+            yield break;
+        }
+
+        line.positionCount = 2;
+        line.SetPosition(0, startPos);
+        line.SetPosition(1, endPos);
+
+        float elapsed = 0f;
+        float safeDuration = Mathf.Max(0.01f, duration);
+        while (elapsed < safeDuration)
+        {
+            float t = elapsed / safeDuration;
+            Vector3 headPos = Vector3.Lerp(startPos, endPos, t);
+            line.SetPosition(0, headPos);
+            line.SetPosition(1, endPos);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        line.SetPosition(0, endPos);
+        line.SetPosition(1, endPos);
+        yield return null;
+
+        ReleasePassLineRenderer(line);
+
+        if (targetAI != null && DataKeyManager.Instance != null)
+        {
+            DataKeyManager.Instance.SetKeyHolder(targetAI, false);
+        }
+    }
+
+    private void ResetRandomPassTimer()
+    {
+        float min = Mathf.Max(0f, randomPassMinInterval);
+        float max = Mathf.Max(min, randomPassMaxInterval);
+        _randomPassTimer = Random.Range(min, max);
     }
 }
