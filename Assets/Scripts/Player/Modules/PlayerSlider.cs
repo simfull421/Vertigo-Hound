@@ -120,7 +120,12 @@ public sealed class PlayerSlider
             {
                 // 속도가 떨어지면 슬라이딩에서 일반 앉기(Crouch) 상태로 전환
                 IsSliding = false;
-                IsCrouching = true; 
+                IsCrouching = true;
+
+                if (_hub.juiceController != null)
+                {
+                    _hub.juiceController.TriggerSlideEnd(false);
+                }
             }
         }
         else if (IsCrouching)

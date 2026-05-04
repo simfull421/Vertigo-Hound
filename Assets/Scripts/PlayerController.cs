@@ -13,6 +13,9 @@ public class PlayerController : MonoBehaviour
     [Tooltip("발소리를 담당하는 PlayerAudioManager를 여기에 드래그 앤 드롭하세요.")]
     public PlayerAudioManager audioManager;
 
+    [Header("Status")]
+    public float poundingImmunityTimer = 0f;
+
     // [추가] 뷰모델 오브젝트 할당용 변수
     [Header("Viewmodel Settings")]
     [Tooltip("뷰모델 카메라 하위에 있는 총기/팔 오브젝트 (GunUpper)를 연결하세요.")]
@@ -119,6 +122,11 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
+        if (poundingImmunityTimer > 0f)
+        {
+            poundingImmunityTimer -= Time.deltaTime;
+        }
+
         movement.UpdateModule();
         wallKick.UpdateModule();
         slider.UpdateModule();

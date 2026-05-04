@@ -272,21 +272,33 @@ public sealed class PlayerAnimatorHandler
 
         if (changed)
         {
-            SyncSetInteger(hashWeaponType, currentWeaponType);
-            
-            if (currentWeaponType == 0) // 맨손(Run Upper) 장착
+            ApplyWeaponChange();
+        }
+    }
+
+    public void ForceSetWeaponType(int type)
+    {
+        if (currentWeaponType == type) return;
+        currentWeaponType = type;
+        ApplyWeaponChange();
+    }
+
+    private void ApplyWeaponChange()
+    {
+        SyncSetInteger(hashWeaponType, currentWeaponType);
+        
+        if (currentWeaponType == 0) // 맨손(Run Upper) 장착
+        {
+            if (_hub.viewmodelGun != null) _hub.viewmodelGun.SetActive(false);
+            if (_hub.runUpper != null) _hub.runUpper.SetActive(true);
+        }
+        else if (currentWeaponType == 1) // 총기(Gun Upper) 장착
+        {
+            if (_hub.runUpper != null) _hub.runUpper.SetActive(false);
+            if (_hub.viewmodelGun != null)
             {
-                if (_hub.viewmodelGun != null) _hub.viewmodelGun.SetActive(false);
-                if (_hub.runUpper != null) _hub.runUpper.SetActive(true);
-            }
-            else if (currentWeaponType == 1) // 총기(Gun Upper) 장착
-            {
-                if (_hub.runUpper != null) _hub.runUpper.SetActive(false);
-                if (_hub.viewmodelGun != null)
-                {
-                    _hub.viewmodelGun.SetActive(true);
-                    _hub.gunController.Initialize(_hub);
-                }
+                _hub.viewmodelGun.SetActive(true);
+                if (_hub.gunController != null) _hub.gunController.Initialize(_hub);
             }
         }
     }

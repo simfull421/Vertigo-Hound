@@ -1168,14 +1168,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e4f5bd70164820b4bb28ea1ae11bfc63, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AITrollingModule
-  qteTimeLimit: 3
-  requiredSpaceMashes: 8
-  timeScaleDuringQTE: 0.5
-  qteUIGroup: {fileID: 0}
-  qteGaugeImage: {fileID: 0}
+  rightHandBone: {fileID: 8310590851690717989}
   passTriggerDistance: 5
   passSearchRadius: 15
-  dummyKeyPrefab: {fileID: 9177181029817055928, guid: 39244e768479b154096f724fd4ca68d3, type: 3}
+  dummyKeyPrefab: {fileID: 0}
   debugForcePlayerHasKey: 1
 --- !u!1 &2479627611656900286
 GameObject:

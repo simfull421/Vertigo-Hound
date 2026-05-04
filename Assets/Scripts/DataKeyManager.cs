@@ -9,6 +9,9 @@ public class DataKeyManager : MonoBehaviour
     public static DataKeyManager Instance { get; private set; }
 
     [Header("Key Status")]
+    [Tooltip("실제 씬에 존재하는 데이터 키 게임오브젝트 (인스펙터 할당 필수)")]
+    public GameObject actualKeyObject;
+
     [Tooltip("현재 키를 소유하고 있는 대상의 Transform")]
     public Transform currentKeyHolder;
     [Tooltip("키의 현재 월드 좌표")]
@@ -55,6 +58,32 @@ public class DataKeyManager : MonoBehaviour
         if (newHolder != null)
         {
             currentKeyPosition = newHolder.position;
+
+            if (actualKeyObject != null)
+            {
+                if (isPlayer)
+                {
+                    // 플레이어가 획득한 경우 키를 뷰모델 등에 넣거나 위치만 맞춥니다.
+                    actualKeyObject.transform.SetParent(newHolder);
+                    actualKeyObject.transform.localPosition = Vector3.zero;
+                }
+                else
+                {
+                    // AI가 획득한 경우 오른손 뼈에 부착합니다.
+                    AITrollingModule trollModule = newHolder.GetComponent<AITrollingModule>();
+                    if (trollModule != null && trollModule.rightHandBone != null)
+                    {
+                        actualKeyObject.transform.SetParent(trollModule.rightHandBone);
+                        actualKeyObject.transform.localPosition = Vector3.zero;
+                        actualKeyObject.transform.localRotation = Quaternion.identity;
+                    }
+                    else
+                    {
+                        actualKeyObject.transform.SetParent(newHolder);
+                        actualKeyObject.transform.localPosition = Vector3.up * 1f; // 오른손이 없으면 가슴 높이로
+                    }
+                }
+            }
         }
 
         OnKeyHolderChanged?.Invoke(newHolder);

@@ -45,10 +45,10 @@ public class KeyPingHUD : MonoBehaviour
             return;
         }
 
-        Vector3 targetPos = DataKeyManager.Instance.currentKeyHolder != null 
-                            ? DataKeyManager.Instance.currentKeyHolder.position + Vector3.up * 1.5f 
-                            : DataKeyManager.Instance.currentKeyPosition;
-
+       // y축 오프셋을 1.5에서 2.2 정도로 높여서 머리 위로 올림
+    Vector3 targetPos = DataKeyManager.Instance.currentKeyHolder != null 
+                        ? DataKeyManager.Instance.currentKeyHolder.position + Vector3.up * 2.2f 
+                        : DataKeyManager.Instance.currentKeyPosition;
         float distance = Vector3.Distance(_mainCamera.transform.position, targetPos);
         if (distanceText != null) distanceText.text = distance.ToString("F0") + "m";
 

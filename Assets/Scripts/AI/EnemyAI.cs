@@ -178,10 +178,13 @@ public class EnemyAI : MonoBehaviour
         }
         else if (newState == EnemyState.Taunting)
         {
-            if (_locomotion != null) _locomotion.PauseMovement();
-            if (_animController != null && _animController.animator != null)
+            // [수정] 조롱 중에도 이동을 멈추지 않음 (상체 애니메이션만 사용)
+            // if (_locomotion != null) _locomotion.PauseMovement();
+            if (_animController != null)
             {
-                _animController.animator.SetTrigger("TriggerDance"); // 춤 애니메이션
+                // 3가지 댄스 중 하나를 무작위로 선택 (0, 1, 2)
+                int randomDance = Random.Range(0, 3);
+                _animController.TriggerDance(randomDance);
             }
         }
     }

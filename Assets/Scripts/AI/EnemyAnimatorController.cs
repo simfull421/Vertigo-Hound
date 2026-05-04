@@ -19,6 +19,8 @@ public class EnemyAnimatorController : MonoBehaviour
     private readonly int hashStumbleIndex = Animator.StringToHash("StumbleIndex");
     private readonly int hashTriggerGetUp = Animator.StringToHash("TriggerGetUp");
     private readonly int hashTriggerAttack = Animator.StringToHash("TriggerAttack");
+    private readonly int hashTriggerDance = Animator.StringToHash("TriggerDance");
+    private readonly int hashDanceIndex = Animator.StringToHash("DanceIndex");
 
     [Header("Hit Animation State Names")]
     [Tooltip("Animator에 띄워둔 피격 State 이름들을 정확히 적어주세요.")]
@@ -98,6 +100,12 @@ public class EnemyAnimatorController : MonoBehaviour
     public void TriggerAttack() {
         if (animator == null || !animator.enabled) return;
         animator.SetTrigger(hashTriggerAttack);
+    }
+
+    public void TriggerDance(int variant) {
+        if (animator == null || !animator.enabled) return;
+        animator.SetInteger(hashDanceIndex, variant);
+        animator.SetTrigger(hashTriggerDance);
     }
 
     // ──────────────────────────────────────────────

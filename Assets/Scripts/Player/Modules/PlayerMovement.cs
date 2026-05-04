@@ -209,6 +209,9 @@ public sealed class PlayerMovement
 
     private void MovePlayer()
     {
+        // Kinematic 상태일 때는 선형 속도(Velocity)를 건드리지 않고 즉시 종료
+        if (_hub.Rb != null && _hub.Rb.isKinematic) return;
+
         Vector2 moveInput = _hub.InputProv.MoveInput;
         bool isMoving = moveInput.sqrMagnitude > 0.01f;
 
