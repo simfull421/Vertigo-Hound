@@ -6,9 +6,9 @@ using DG.Tweening;
 
 public class CameraJuiceController : MonoBehaviour
 {
-    [Header("Cinemachine QTE Setup")]
+    [Header("Cinemachine Pounding Setup")]
     public CinemachineBrain cinemachineBrain; // <--- 인스펙터에서 Main Camera 할당
-    [Tooltip("파운딩 당할 때 활성화할 시네머신 QTE 전용 카메라")]
+    [Tooltip("파운딩 당할 때 활성화할 시네머신 파운딩 전용 카메라")]
     public CinemachineVirtualCamera qteVirtualCamera;
     public CinemachineVirtualCamera aiFleeZoomCam; // <--- 이거 한 줄 추가
 
@@ -44,6 +44,9 @@ public class CameraJuiceController : MonoBehaviour
 
     void Awake()
     {
+        // [버그 수정] CinemachineBrain이 기본 enabled 상태이면 카메라를 덮어써서 Juice가 작동하지 않음
+        if (cinemachineBrain != null) cinemachineBrain.enabled = false;
+
         if (positionPivot != null) _originalLocalPos = positionPivot.localPosition;
         if (mainCamera != null)
         {
@@ -79,12 +82,12 @@ public class CameraJuiceController : MonoBehaviour
     public void InterruptPulse() => impact.InterruptPulse();
     public void TriggerHighVaultJuice(float duration) => highVault.Trigger(this, duration);
 
-    // ── QTE Trolling Camera Logic (Cinemachine & DOTween 기반) ──
-    private bool _isQTEActive = false;
+    // ── Pounding Cinematic Camera Logic (Cinemachine & DOTween 기반) ──
+    private bool _isCinematicActive = false;
 
     public void DisablePlayerCamera()
     {
-        _isQTEActive = true;
+        _isCinematicActive = true;
         if (cinemachineBrain != null) cinemachineBrain.enabled = true; 
         if (actionController != null) actionController.enabled = false; 
     }
@@ -92,7 +95,7 @@ public class CameraJuiceController : MonoBehaviour
     // 컷신 종료 후 복구 시 호출
     public void RestoreCameraAndPlayer()
     {
-        _isQTEActive = false;
+        _isCinematicActive = false;
         if (cinemachineBrain != null) cinemachineBrain.enabled = false; 
         
         // [핵심] Z축 밀림 등 카메라 고장 원천 차단 (하드 리셋)
@@ -123,8 +126,8 @@ public class CameraJuiceController : MonoBehaviour
 
     void LateUpdate()
     {
-        // 시네마틱(QTE) 중일 때는 쥬스 컨트롤러가 카메라 트랜스폼을 절대 건드리지 않음
-        if (_isQTEActive) return; 
+        // 시네마틱(파운딩) 중일 때는 쥬스 컨트롤러가 카메라 트랜스폼을 절대 건드리지 않음
+        if (_isCinematicActive) return; 
 
         if (mainCamera == null || positionPivot == null) return;
 
@@ -143,13 +146,13 @@ public class CameraJuiceController : MonoBehaviour
 
         Quaternion actionRot = (actionController != null) ? actionController.ActionRotation : Quaternion.identity;
 
-        if (!_isQTEActive)
+        if (!_isCinematicActive)
         {
             // 기본 상태: 오리지널 로컬 베이스 + 쥬스 오프셋
             positionPivot.localPosition = _originalLocalPos + totalPosOffset;
             mainCamera.transform.localRotation = _originalLocalRot * actionRot * Quaternion.Euler(totalRotOffset);
             mainCamera.fieldOfView = maxFov + totalFovOffset;
         }
-        // 시네마틱(QTE) 중일 때는 카메라의 위치/회전 제어를 전적으로 시네머신에 맡깁니다.
+        // 시네마틱(파운딩) 중일 때는 카메라의 위치/회전 제어를 전적으로 시네머신에 맡깁니다.
     }
 }

@@ -16,6 +16,7 @@ public sealed class PlayerSlider
     public bool IsCrouching { get; private set; }
 
     private float _lastSlideEndTime = -10f;
+    private bool _requireCrouchRepress = false; // 슬라이딩 점프 후 Ctrl 재입력 요구 플래그
 
     private float _originalCapsuleHeight;
     private Vector3 _originalCapsuleCenter;
@@ -49,6 +50,7 @@ public sealed class PlayerSlider
 
         if (!hasCeiling)
         {
+            _requireCrouchRepress = true; // 슬라이딩 점프: 착지 후 Ctrl 재입력 요구
             StopSlideOrCrouch(true);
         }
         else 
@@ -81,6 +83,15 @@ public sealed class PlayerSlider
         Vector3 currentXZVelocity = new Vector3(_hub.Rb.linearVelocity.x, 0, _hub.Rb.linearVelocity.z);
         float currentSpeed = currentXZVelocity.magnitude;
         bool crouchInput = _hub.InputProv.SlideHeld || _hub.InputProv.CrouchHeld;
+
+        // 슬라이딩 점프 후 Ctrl 재입력 요구 로직
+        if (_requireCrouchRepress)
+        {
+            if (!crouchInput)
+                _requireCrouchRepress = false; // 키를 뗈으므로 해제
+            else
+                crouchInput = false; // 키를 계속 누르고 있으면 무시
+        }
 
         if (!IsSliding && !IsCrouching)
         {

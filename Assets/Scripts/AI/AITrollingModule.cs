@@ -41,7 +41,7 @@ public class AITrollingModule : MonoBehaviour
     
     // Copilot이 추가한 유효한 변수들 (카메라 및 타이머 제어용)
     private float _passDelayTimer;
-    private Coroutine _closeupCoroutine;
+
     private int _defaultCameraOriginalPriority;
     private int _closeupCameraOriginalPriority;
 
@@ -112,10 +112,10 @@ public class AITrollingModule : MonoBehaviour
         Time.timeScale = 0.1f;
         DG.Tweening.DOVirtual.DelayedCall(0.15f, () => Time.timeScale = 1f).SetUpdate(true);
 
-        QTECinematicController cinematicCtrl = pc.GetComponentInChildren<QTECinematicController>();
+        PoundCinematicController cinematicCtrl = pc.GetComponentInChildren<PoundCinematicController>();
         if (cinematicCtrl != null)
         {
-            cinematicCtrl.StartQTEDummyCinematic(this.gameObject);
+            cinematicCtrl.StartPoundCinematic(this.gameObject);
         }
     }
 
@@ -140,12 +140,15 @@ public class AITrollingModule : MonoBehaviour
         TriggerKeyStealCloseup(); // 카메라 클로즈업 연출 시작
     }
 
-    // Remote에서 가져온 유효한 시네머신 클로즈업 로직
+    // 시네머신 클로즈업 로직 (동적 타겟팅)
     private void TriggerKeyStealCloseup()
     {
         if (keyStealCloseupCamera == null) return;
 
-        if (_closeupCoroutine != null) StopCoroutine(_closeupCoroutine);
+        // [핵심] 카메라의 타겟을 현재 이 스크립트가 붙어있는 AI로 동적 할당
+        // 더 정밀한 얼굴 클로즈업을 원한다면 this.transform 대신 머리(Head) Bone의 Transform을 캐싱해서 넣을 것.
+        keyStealCloseupCamera.Follow = this.transform;
+        keyStealCloseupCamera.LookAt = this.transform;
 
         if (defaultCamera != null)
         {
@@ -158,22 +161,17 @@ public class AITrollingModule : MonoBehaviour
         }
         keyStealCloseupCamera.Priority = closeupPriority;
 
-        _closeupCoroutine = StartCoroutine(ResetCloseupAfterDelay());
-    }
-
-    private IEnumerator ResetCloseupAfterDelay()
-    {
-        yield return new WaitForSeconds(keyStealCloseupDuration);
-
-        if (keyStealCloseupCamera != null)
+        DOVirtual.DelayedCall(keyStealCloseupDuration, () =>
         {
-            keyStealCloseupCamera.Priority = _closeupCameraOriginalPriority;
-        }
-        if (defaultCamera != null)
-        {
-            defaultCamera.Priority = _defaultCameraOriginalPriority;
-        }
-        _closeupCoroutine = null;
+            if (keyStealCloseupCamera != null)
+            {
+                keyStealCloseupCamera.Priority = _closeupCameraOriginalPriority;
+            }
+            if (defaultCamera != null)
+            {
+                defaultCamera.Priority = _defaultCameraOriginalPriority;
+            }
+        }).SetUpdate(true);
     }
 
     // Local HEAD의 DOTween 기반 패스 로직 유지

@@ -13,10 +13,10 @@ public class ViewmodelGunController : MonoBehaviour
     [Header("Gun Stats")]
     public int maxAmmo = 15;
     public int currentAmmo;
-    public float fireRate = 0.2f;
+    public float fireRate = 0.5f;
     public float reloadTime = 1.5f;
-    public float damage = 10f;
-    public float headshotMultiplier = 2.5f;
+    public float damage = 25f;
+    public float headshotMultiplier = 2.0f;
     public float range = 100f;
     public LayerMask hitMask = ~0;
     
@@ -44,7 +44,7 @@ public class ViewmodelGunController : MonoBehaviour
 
     [Header("Camera Recoil")]
     [Tooltip("사격 시 카메라 위로 튀는 각도")]
-    public float cameraRecoilPitch = 1.5f;
+    public float cameraRecoilPitch = 5f;
 
     [Header("VFX & Audio (고도화)")]
     public VisualEffect shootVFX;
@@ -88,6 +88,20 @@ public class ViewmodelGunController : MonoBehaviour
     
     // [방어] gunAnim.Update(0f) 제거 대체: SetActive 이후 첫 LateUpdate에서 Idle 포즈를 재캡처합니다.
     private bool _needsHipPoseCapture = false;
+
+    /// <summary>
+    /// 무기 전환 시 호출하여 Sway 잔존값을 초기화합니다.
+    /// </summary>
+    public void ResetSway()
+    {
+        _currentSway = Vector3.zero;
+        _adsWeight = 0f;
+        if (weaponRoot != null)
+        {
+            weaponRoot.localPosition = _hipLocalPos;
+            weaponRoot.localRotation = _hipLocalRot;
+        }
+    }
 
     public void Initialize(PlayerController hub)
     {
@@ -137,7 +151,7 @@ public class ViewmodelGunController : MonoBehaviour
     {
         if (_hub == null || _hub.animatorHandler.currentWeaponType != 1) return;
 
-        bool isFiring = _hub.InputProv.FireHeld; 
+        bool isFiring = _hub.InputProv.FireTriggered; // 단발 (윙맨 스타일)
         _isAiming = _hub.InputProv.AimHeld; 
         bool isReloadingInput = _hub.InputProv.ReloadTriggered; 
         Vector2 lookDelta = _hub.InputProv.LookInput; 
@@ -198,23 +212,21 @@ public class ViewmodelGunController : MonoBehaviour
                 weaponRoot.position = Vector3.Lerp(weaponRoot.position, targetPos, Time.deltaTime * adsSpeed);
             }
         }
-        else
+        // Sway 적용: 절대 좌표 기반 (드리프트 방지)
+        // ADS 중에는 Sway 미적용, hip fire에서만 적용
+        if (!_isAiming)
         {
-            // [노줌 고정] 줌아웃 완료 시 럴프 끄고 힙파이어 좌표에 강제 락인(Lock-in)
             if (_adsWeight <= 0.01f)
             {
-                weaponRoot.localPosition = _hipLocalPos;
+                weaponRoot.localPosition = _hipLocalPos + _currentSway;
                 weaponRoot.localRotation = _hipLocalRot;
             }
             else
             {
-                weaponRoot.localPosition = Vector3.Lerp(weaponRoot.localPosition, _hipLocalPos, Time.deltaTime * adsSpeed);
+                weaponRoot.localPosition = Vector3.Lerp(weaponRoot.localPosition, _hipLocalPos + _currentSway, Time.deltaTime * adsSpeed);
                 weaponRoot.localRotation = Quaternion.Slerp(weaponRoot.localRotation, _hipLocalRot, Time.deltaTime * adsSpeed);
             }
         }
-
-        // 최종 더하기: Sway(마우스 관성)
-        weaponRoot.localPosition += _currentSway;
     }
 
     private void Shoot()

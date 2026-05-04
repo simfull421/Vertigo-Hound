@@ -3,14 +3,15 @@ using UnityEngine.Playables; // 타임라인 제어용
 using DG.Tweening;
 using Cinemachine;
 
-public class QTECinematicController : MonoBehaviour
+public class PoundCinematicController : MonoBehaviour
 {
     [Header("Timeline")]
     public PlayableDirector timelineDirector;
 
     [Header("Real Objects (FSM, Physics 활성화됨)")]
     public GameObject realPlayer;
-    public GameObject playerVisuals; // <--- 새로 추가 (여기에 noArms 할당)
+    [Tooltip("시네마틱 중 숨길 플레이어 비주얼 오브젝트들 (팔, 무기, 모델 등)")]
+    public GameObject[] playerVisualsToHide;
     // 인스펙터에서 할당할 필요 없게 숨김
     [HideInInspector] public GameObject dynamicRealAI; 
 
@@ -19,7 +20,7 @@ public class QTECinematicController : MonoBehaviour
     public GameObject dummyAI;
 
     [Header("Cinematic Cameras")]
-    public CinemachineVirtualCamera qteVirtualCamera;
+    public CinemachineVirtualCamera poundVirtualCamera;
     public CinemachineVirtualCamera aiFleeZoomCam;
     public CameraJuiceController juiceController;
 
@@ -43,10 +44,16 @@ public class QTECinematicController : MonoBehaviour
     }
 
     /// <summary>
-    /// QTE 돌입 시 호출하여 연출 시작
+    /// 파운딩 시네마틱 돌입 시 호출하여 연출 시작
     /// </summary>
-    public void StartQTEDummyCinematic(GameObject attackerAI)
+    public void StartPoundCinematic(GameObject attackerAI)
     {
+        if (attackerAI == null)
+        {
+            Debug.LogWarning("[Pounding] StartPoundCinematic 호출 시 attackerAI가 null입니다!");
+            return;
+        }
+
         dynamicRealAI = attackerAI;
         _realEnemyAI = dynamicRealAI.GetComponent<EnemyAI>();
 
@@ -55,7 +62,11 @@ public class QTECinematicController : MonoBehaviour
         dummyAI.transform.SetPositionAndRotation(dynamicRealAI.transform.position, dynamicRealAI.transform.rotation);
 
         // 2. 실제 캐릭터 끄기
-        if (playerVisuals != null) playerVisuals.SetActive(false); // <--- 모델링만 숨김
+        if (playerVisualsToHide != null)
+        {
+            foreach (var vis in playerVisualsToHide)
+                if (vis != null) vis.SetActive(false);
+        }
         dynamicRealAI.SetActive(false);
 
         // 3. 더미 켜기
@@ -70,9 +81,9 @@ public class QTECinematicController : MonoBehaviour
         }
 
         if (juiceController != null) juiceController.DisablePlayerCamera();
-        if (qteVirtualCamera != null) qteVirtualCamera.Priority = 20;
+        if (poundVirtualCamera != null) poundVirtualCamera.Priority = 20;
 
-    // 4. 타임라인 재생
+        // 4. 타임라인 재생
         timelineDirector.Play();
     }
 
@@ -88,6 +99,14 @@ public class QTECinematicController : MonoBehaviour
             {
                 trollingModule.ExecuteKeyStealAndFlee();
             }
+            else
+            {
+                Debug.LogWarning($"[Pounding] dynamicRealAI '{dynamicRealAI.name}'에 AITrollingModule이 없습니다!");
+            }
+        }
+        else
+        {
+            Debug.LogWarning("[Pounding] OnSignalExecuteKeySteal 호출 시 dynamicRealAI가 null입니다! 타임라인 Signal 시점을 확인하세요.");
         }
     }
 
@@ -110,10 +129,14 @@ public class QTECinematicController : MonoBehaviour
             dynamicRealAI.SetActive(true);
         }
 
-        if (playerVisuals != null) playerVisuals.SetActive(true); // <--- 모델링 복구
+        if (playerVisualsToHide != null)
+        {
+            foreach (var vis in playerVisualsToHide)
+                if (vis != null) vis.SetActive(true);
+        }
 
         // 파운딩 카메라 끄기
-        if (qteVirtualCamera != null) qteVirtualCamera.Priority = 0;
+        if (poundVirtualCamera != null) poundVirtualCamera.Priority = 0;
 
         // 2. 키 유무 분기 처리 (Node A)
         bool hasKey = DataKeyManager.Instance != null && DataKeyManager.Instance.isKeyHeldByPlayer;
