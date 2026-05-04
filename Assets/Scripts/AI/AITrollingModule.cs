@@ -154,11 +154,12 @@ public class AITrollingModule : MonoBehaviour
         if (_isQTEActive) return;
         
         bool hasKey = DataKeyManager.Instance != null && DataKeyManager.Instance.isKeyHeldByPlayer;
-        _stealKeyOnFail = hasKey || debugForcePlayerHasKey;
-        if (!hasKey && !debugForcePlayerHasKey)
+        bool canStealKey = hasKey || debugForcePlayerHasKey;
+        if (!canStealKey)
         {
-            Debug.Log($"[AITrolling] 플레이어가 키를 가지고 있지 않으므로 파운딩만 실행합니다.");
+            Debug.Log($"[AITrolling] 플레이어가 키를 가지고 있지 않아 파운딩만 실행됩니다.");
         }
+        _stealKeyOnFail = canStealKey;
 
         _playerTransform = playerTransform;
         _playerController = playerTransform.GetComponent<PlayerController>();

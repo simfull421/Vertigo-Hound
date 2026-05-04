@@ -153,13 +153,13 @@ public class PlayerController : MonoBehaviour
 
     void FixedUpdate()
     {
-        bool treatAsSlidingJump = slider.IsSliding || _jumpFromSlide;
+        bool shouldPreserveSlideMomentum = slider.IsSliding || _jumpFromSlide;
         
         if (vault.IsVaulting)
         {
             // Vault는 내부 FixedUpdate 코루틴에서 전적으로 이동을 통제하므로 다른 모듈 로직을 배제합니다.
         }
-        else if (treatAsSlidingJump)
+        else if (shouldPreserveSlideMomentum)
         {
             if (slider.IsSliding)
             {
@@ -191,7 +191,7 @@ public class PlayerController : MonoBehaviour
                 {
                     wallKick.HandleJump();
                 }
-                else if (treatAsSlidingJump)
+                else if (shouldPreserveSlideMomentum)
                 {
                     slider.HandleJump();
                 }
