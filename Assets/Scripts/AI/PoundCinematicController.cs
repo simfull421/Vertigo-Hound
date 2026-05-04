@@ -10,6 +10,7 @@ public class PoundCinematicController : MonoBehaviour
 
     [Header("Real Objects (FSM, Physics 활성화됨)")]
     public GameObject realPlayer;
+    public GameObject defaultArmsVisual;
     [Tooltip("시네마틱 중 숨길 플레이어 비주얼 오브젝트들 (팔, 무기, 모델 등)")]
     public GameObject[] playerVisualsToHide;
     // 인스펙터에서 할당할 필요 없게 숨김
@@ -129,11 +130,7 @@ public class PoundCinematicController : MonoBehaviour
             dynamicRealAI.SetActive(true);
         }
 
-        if (playerVisualsToHide != null)
-        {
-            foreach (var vis in playerVisualsToHide)
-                if (vis != null) vis.SetActive(true);
-        }
+        if (defaultArmsVisual != null) defaultArmsVisual.SetActive(true);
 
         // 파운딩 카메라 끄기
         if (poundVirtualCamera != null) poundVirtualCamera.Priority = 0;
