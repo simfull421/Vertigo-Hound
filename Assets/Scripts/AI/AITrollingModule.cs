@@ -37,7 +37,6 @@ public class AITrollingModule : MonoBehaviour
     public CinemachineVirtualCamera defaultCamera;
     public float keyStealCloseupDuration = 1.2f;
     public int closeupPriority = 20;
-    public int defaultPriority = 10;
 
     [Header("Debug")]
     [Tooltip("체크 시, 플레이어가 키를 가지고 있지 않아도 QTE(파운딩) 연출을 강제로 실행합니다.")]
@@ -154,12 +153,12 @@ public class AITrollingModule : MonoBehaviour
         if (_isQTEActive) return;
         
         bool hasKey = DataKeyManager.Instance != null && DataKeyManager.Instance.isKeyHeldByPlayer;
-        bool shouldStealKey = hasKey || debugForcePlayerHasKey;
-        if (!shouldStealKey)
+        bool keyStealEnabled = hasKey || debugForcePlayerHasKey;
+        if (!keyStealEnabled)
         {
             Debug.Log($"[AITrolling] 플레이어가 키를 가지고 있지 않아 파운딩만 실행됩니다.");
         }
-        _stealKeyOnFail = shouldStealKey;
+        _stealKeyOnFail = keyStealEnabled;
 
         _playerTransform = playerTransform;
         _playerController = playerTransform.GetComponent<PlayerController>();
@@ -255,7 +254,8 @@ public class AITrollingModule : MonoBehaviour
 
         if (defaultCamera != null)
         {
-            defaultCamera.Priority = Mathf.Min(defaultPriority, _defaultCameraOriginalPriority);
+            int loweredPriority = Mathf.Min(_defaultCameraOriginalPriority, closeupPriority - 1);
+            defaultCamera.Priority = loweredPriority;
         }
         keyStealCloseupCamera.Priority = closeupPriority;
 
