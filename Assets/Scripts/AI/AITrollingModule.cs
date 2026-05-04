@@ -156,7 +156,7 @@ public class AITrollingModule : MonoBehaviour
         bool keyStealEnabled = hasKey || debugForcePlayerHasKey;
         if (!keyStealEnabled)
         {
-            Debug.Log($"[AITrolling] 플레이어가 키를 가지고 있지 않아 파운딩만 실행됩니다.");
+            Debug.Log($"[AITrolling] 플레이어가 키를 가지고 있지 않아 파운딩 QTE만 진행되고 키 탈취는 생략됩니다.");
         }
         _stealKeyOnFail = keyStealEnabled;
 
@@ -254,7 +254,11 @@ public class AITrollingModule : MonoBehaviour
 
         if (defaultCamera != null)
         {
-            int loweredPriority = Mathf.Min(_defaultCameraOriginalPriority, closeupPriority - 1);
+            int loweredPriority = _defaultCameraOriginalPriority;
+            if (loweredPriority >= closeupPriority)
+            {
+                loweredPriority = closeupPriority - 1;
+            }
             defaultCamera.Priority = loweredPriority;
         }
         keyStealCloseupCamera.Priority = closeupPriority;
