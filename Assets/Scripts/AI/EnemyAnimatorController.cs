@@ -178,10 +178,9 @@ public class EnemyAnimatorController : MonoBehaviour
 
     void OnAnimatorIK(int layerIndex)
     {
-        Transform lookAtTarget = GetCurrentLookAtTarget();
-        if (!useLookAtIK || animator == null || !animator.enabled || lookAtTarget == null) return;
+        if (!useLookAtIK || animator == null || !animator.enabled || _lookAtTarget == null) return;
 
-        if (_lookAtTarget == null) return;
+        Transform lookAtTarget = GetCurrentLookAtTarget();
 
         float maxDistanceSqr = lookAtMaxDistance * lookAtMaxDistance;
         float distanceSqr = (transform.position - _lookAtTarget.position).sqrMagnitude;

@@ -159,19 +159,15 @@ public class AITrollingModule : MonoBehaviour
     /// </summary>
     public void ExecuteKeyStealAndFlee()
     {
-        if (DataKeyManager.Instance != null && DataKeyManager.Instance.isKeyHeldByPlayer)
+        bool canSteal = DataKeyManager.Instance != null && DataKeyManager.Instance.isKeyHeldByPlayer;
+        if (canSteal)
         {
             DataKeyManager.Instance.SetKeyHolder(this.transform, false);
+            _passDelayTimer = passDelayAfterSteal; // 뺏은 직후 바로 패스하지 못하도록 유예 기간 설정
+            TriggerKeyStealCloseup(); // 카메라 클로즈업 연출 시작
         }
-        else
-        {
-            _enemyAI.SetState(EnemyAI.EnemyState.Fleeing);
-            return;
-        }
-        
+
         _enemyAI.SetState(EnemyAI.EnemyState.Fleeing);
-        _passDelayTimer = passDelayAfterSteal; // 뺏은 직후 바로 패스하지 못하도록 유예 기간 설정
-        TriggerKeyStealCloseup(); // 카메라 클로즈업 연출 시작
     }
 
     // Remote에서 가져온 유효한 시네머신 클로즈업 로직
@@ -324,10 +320,10 @@ public class AITrollingModule : MonoBehaviour
         line.SetPosition(1, endPos);
 
         float elapsed = 0f;
-        float safeDuration = Mathf.Max(0.01f, duration);
-        while (elapsed < safeDuration)
+        float clampedDuration = Mathf.Max(0.01f, duration);
+        while (elapsed < clampedDuration)
         {
-            float t = elapsed / safeDuration;
+            float t = elapsed / clampedDuration;
             Vector3 headPos = Vector3.Lerp(startPos, endPos, t);
             line.SetPosition(0, headPos);
             line.SetPosition(1, endPos);
