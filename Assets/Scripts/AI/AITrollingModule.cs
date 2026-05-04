@@ -88,12 +88,12 @@ public class AITrollingModule : MonoBehaviour
                 if (pc != null) _playerTransform = pc.transform;
             }
 
+            if (_playerTransform == null) return;
+
             if (_passDelayTimer <= 0f)
             {
                 _randomPassTimer -= Time.deltaTime;
-
-                bool shouldPass = _playerTransform != null &&
-                                  Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance;
+                bool shouldPass = Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance;
 
                 if (!shouldPass && _randomPassTimer <= 0f)
                 {
