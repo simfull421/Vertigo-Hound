@@ -178,12 +178,13 @@ public class EnemyAnimatorController : MonoBehaviour
 
     void OnAnimatorIK(int layerIndex)
     {
-        if (!useLookAtIK || animator == null || !animator.enabled || _lookAtTarget == null) return;
+        Transform playerTarget = _lookAtTarget;
+        if (!useLookAtIK || animator == null || !animator.enabled || playerTarget == null) return;
 
         Transform lookAtTarget = GetCurrentLookAtTarget();
 
         float maxDistanceSqr = lookAtMaxDistance * lookAtMaxDistance;
-        float distanceSqr = (transform.position - _lookAtTarget.position).sqrMagnitude;
+        float distanceSqr = (transform.position - playerTarget.position).sqrMagnitude;
         if (distanceSqr > maxDistanceSqr)
         {
             animator.SetLookAtWeight(0f, bodyWeight, headWeight);

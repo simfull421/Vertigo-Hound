@@ -9,6 +9,7 @@ public class VolumeEffectManager : MonoBehaviour
     public Volume globalVolume; // 씬에 있는 Global Volume 할당
 
     [Header("Hit Effect Settings")]
+    [Range(0.8f, 1f)]
     public float hitVignetteIntensity = 0.9f;
     public float hitVignetteDuration = 0.3f;
     
@@ -39,8 +40,7 @@ public class VolumeEffectManager : MonoBehaviour
         {
             DOTween.Kill(_vignette); // 중복 실행 방지
             _vignette.color.value = Color.black;
-            float targetIntensity = Mathf.Clamp(hitVignetteIntensity, 0.8f, 1f);
-            _vignette.intensity.value = targetIntensity;
+            _vignette.intensity.value = hitVignetteIntensity;
             DOTween.To(() => _vignette.intensity.value, x => _vignette.intensity.value = x, 0f, hitVignetteDuration)
                    .SetEase(Ease.OutQuad);
         }

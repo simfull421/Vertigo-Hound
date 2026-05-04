@@ -58,6 +58,7 @@ public class AITrollingModule : MonoBehaviour
     private int _closeupCameraOriginalPriority;
     private float _randomPassTimer;
     private readonly Queue<LineRenderer> _passLinePool = new Queue<LineRenderer>();
+    private const float MinPassLineDuration = 0.01f;
 
     void Awake()
     {
@@ -93,12 +94,9 @@ public class AITrollingModule : MonoBehaviour
             if (_passDelayTimer <= 0f)
             {
                 _randomPassTimer -= Time.deltaTime;
-                bool shouldPass = Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance;
-
-                if (!shouldPass && _randomPassTimer <= 0f)
-                {
-                    shouldPass = true;
-                }
+                bool randomPassReady = _randomPassTimer <= 0f;
+                bool shouldPass = Vector3.Distance(transform.position, _playerTransform.position) < passTriggerDistance
+                                  || randomPassReady;
 
                 if (shouldPass)
                 {
@@ -320,7 +318,7 @@ public class AITrollingModule : MonoBehaviour
         line.SetPosition(1, endPos);
 
         float elapsed = 0f;
-        float clampedDuration = Mathf.Max(0.01f, duration);
+        float clampedDuration = Mathf.Max(MinPassLineDuration, duration);
         while (elapsed < clampedDuration)
         {
             float t = elapsed / clampedDuration;
